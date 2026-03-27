@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>PA System (no-CSS, prototype)</title>
+</head>
+<body>
+
+	<h2>Select User</h2>
+	<select id="userSelect"></select>
+
+	<br><br>
+
+	<button id="streamBtn">Hold to Stream</button>
+	<br><br>
+	<button onclick="playFile(1)">Play File 1</button>
+	<br><br>
+	<button onclick="playFile(2)">Play File 2</button>
+
+	<script>
+		// Load users on page load
+		window.onload = function() {
+			fetch('/get_users')
+				.then(response => response.json())
+				.then(data => {
+					let select = document.getElementById('userSelect');
+
+					// FIX: backend returns array
+					data.forEach(user => {
+						let option = document.createElement('option');
+						option.value = user;
+						option.text = user;
+						select.appendChild(option);
+					});
+				});
+		};
+
+		function getSelectedUser() {
+			return document.getElementById('userSelect').value;
+		}
+
+		// STREAM BUTTON (press = on, release = off)
+		const streamBtn = document.getElementById('streamBtn');
+
+		function sendStream(mode) {
+			let user = getSelectedUser();
+			fetch('/toggle_stream?user=' + encodeURIComponent(user) + '&mode=' + mode);
+		}
+
+		// Mouse events
+		streamBtn.addEventListener('mousedown', () => sendStream('on'));
+		streamBtn.addEventListener('mouseup', () => sendStream('off'));
+		streamBtn.addEventListener('mouseleave', () => sendStream('off'));
+
+		// Touch events (mobile support)
+		streamBtn.addEventListener('touchstart', (e) => {
+			e.preventDefault();
+			sendStream('on');
+		});
+
+		streamBtn.addEventListener('touchend', () => sendStream('off'));
+
+		function playFile(fileNum) {
+			let user = getSelectedUser();
+			fetch('/play_file?user=' + encodeURIComponent(user) + '&file=' + fileNum);
+		}
+	</script>
+
+</body>
+</html>

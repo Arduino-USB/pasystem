@@ -1,0 +1,5 @@
+ML/
+__pycache__/
+.env
+key
+config.json
