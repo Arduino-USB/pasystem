@@ -1,6 +1,6 @@
-import socket, psutil, ipaddress, requests, threading, json, logging, random, string, os, time, hashlib, sys
-from concurrent.futures import ThreadPoolExecutor
-from flask import Flask, request
+import socket, psutil, ipaddress, requests, threading, json, logging, random, string, os, time, hashlib, sys, socket
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from flask import Flask, request, make_response
 
 
 
@@ -62,87 +62,146 @@ class KeyMgr:
 	def get_key(self):
 		return self.key		
 
-		
+
+
+
+
 class PortIdentify:
 	def __init__(self, target_port):
 		self.TARGET_PORT = target_port
 		self.found_ip = None
 		self.keymgr = KeyMgr()
+		print(f"[port_identify] Initialized with target port {self.TARGET_PORT}")
 
 	def get_network(self):
+		print("[port_identify] Discovering network...")
+
 		for iface, addrs in psutil.net_if_addrs().items():
+			print(f"[port_identify] Checking interface: {iface}")
+
 			for addr in addrs:
 				if addr.family == socket.AF_INET:
 					ip = addr.address
 					netmask = addr.netmask
 
+					print(f"[port_identify] Found address {ip} with netmask {netmask}")
+
 					if ip.startswith("127."):
+						print("[port_identify] Skipping loopback address")
 						continue
 
 					network = ipaddress.IPv4Network(f"{ip}/{netmask}", strict=False)
+					print(f"[port_identify] Using network: {network}")
 					return network
 
-		raise Exception("No valid network found")
+		raise Exception("[port_identify] No valid network found")
 
 	def check_ip(self, ip):
 		if self.found_ip:
-			return  # stop early if already found
+			return None
 
 		ip = str(ip)
+		#print(f"[port_identify] Checking IP: {ip}")
 
 		try:
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 				s.settimeout(0.5)
-				if s.connect_ex((ip, self.TARGET_PORT)) == 0:
+				result = s.connect_ex((ip, self.TARGET_PORT))
+
+				if result == 0:
+					print(f"[port_identify] Port open on {ip}, attempting HTTP check")
+
 					try:
-						response = requests.get(
-							f"http://{ip}:{self.TARGET_PORT}/register?key={self.keymgr.get_key()}", 
-							timeout=1
-						)
+						url = f"http://{ip}:{self.TARGET_PORT}/register?key={self.keymgr.get_key()}"
+						print(f"[port_identify] Sending request to {url}")
+
+						response = requests.get(url, timeout=1)
+
+						if response:
+							print(f"[port_identify] Response from {ip}: {response.status_code}")
 
 						if response and response.status_code == 200:
-							print(f"[ip_check] Found:  {ip}")
+							print(f"[port_identify] SUCCESS - Found valid server at {ip}")
 							self.found_ip = ip
-					except:
-						pass
-		except:
-			pass
+							return ip
+
+					except Exception as e:
+						print(f"[port_identify] HTTP check failed for {ip}: {e}")
+				else:
+					#print(f"[port_identify] Port closed on {ip}")
+					pass
+
+		except Exception as e:
+			print(f"[port_identify] Socket error on {ip}: {e}")
+
+		return None
 
 	def scan_network(self):
+		print("[port_identify] Starting network scan loop")
 		network = self.get_network()
-		print(f"Scanning network: {network}")
 
-		with ThreadPoolExecutor(max_workers=50) as executor:
-			executor.map(self.check_ip, network.hosts())
-		return self.found_ip
+		while True:
+			print("[port_identify] Beginning new scan cycle")
 
-class ConfigClientServer:
+			with ThreadPoolExecutor(max_workers=50) as executor:
+				futures = {
+					executor.submit(self.check_ip, ip): ip
+					for ip in network.hosts()
+				}
+
+				for future in as_completed(futures):
+					if self.found_ip:
+						print(f"[port_identify] Found IP early: {self.found_ip}, stopping scan")
+						return self.found_ip
+
+					try:
+						result = future.result()
+						if result:
+							print(f"[port_identify] Found IP via future: {result}")
+							return result
+					except Exception as e:
+						print(f"[port_identify] Future error: {e}")
+
+			print("[port_identify] Scan cycle complete, retrying in 1 second")
+			time.sleep(1)
+			
+class ConfigClient:
 	def __init__(self):
 		self.app = Flask(__name__)
-		self.app.logger.disabled = True
+		#self.app.logger.disabled = True
 		
 		self.config_resv = False
 
 		self.keymgr = KeyMgr()			
 	
-		log = logging.getLogger('werkzeug')
-		log.disabled = True
-		
+		#log = logging.getLogger('werkzeug')
+		#log.disabled = True
+		@self.app.before_request
+		def handle_options():
+			if request.method == 'OPTIONS':
+				response = make_response()
+				response.headers['Access-Control-Allow-Origin'] = '*'
+				response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+				response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+				return response  # only short-circuit OPTIONS
+
+		# Add CORS headers to all responses
+		@self.app.after_request
+		def add_cors_headers(response):
+			response.headers['Access-Control-Allow-Origin'] = '*'
+			response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+			response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+			return response
+			
 		self.setup_routes()
-		threading.Thread(target=self.app.run, kwargs={"host": "0.0.0.0", "port": 6122}, daemon=True).start()
+		threading.Thread(target=self.app.run, kwargs={"host": "0.0.0.0", "port": 6123}, daemon=True).start()
 
 	def setup_routes(self):
-		@self.app.route('/set_config')
+		@self.app.route('/set_config', methods=['GET', 'POST', 'OPTIONS', "PUT", "DELETEt"])
 		def set_config():
 			config = request.get_json()
-			key = request.args.get('key')
 			
-			print("[flask_app] Got config request")	
 		
-			if key != self.keymgr.get_key():
-				print("[flask_app] Wrong key")
-				return "Key Error", 400
-			
 			print("[flask_app] Writing to file")	
 			
 			self.config_resv = True			
@@ -169,11 +228,15 @@ class ConfigClientServer:
 		@self.app.route('/alive')
 		def alive():
 			return "YES", 200		
-		
+
+
+
+
+
 class RemoteConfig():
-	def __init__(self, port=6741):
+	def __init__(self, port=6122):
 		
-		self.config_resv_server = ConfigClientServer()
+		self.config_resv_server = ConfigClient()
 		self.port_idenifier = PortIdentify(port)
 		self.ip_addr = self.port_idenifier.scan_network()
 		self.config_loaded = False
@@ -183,8 +246,9 @@ class RemoteConfig():
 			config_data = json.load(open('config.json'))
 			self.config_loaded = True
 			self.room = config_data.get('room')
-			self.ip = config_data.get('ip')
+			self.ip = config_data.get('host')
 			self.whisper = config_data.get('whisper')
+			self.password = config_data.get('password')
 		else:
 			def poll_server():
 				print(f"[remote_config] Starting Flask server to poll {self.ip_addr}:{port}")
@@ -193,13 +257,14 @@ class RemoteConfig():
 					time.sleep(5)
 					if self.config_resv_server.config_resv:
 						print("[remote_config] Config recieved from server, applying")
-						self.config_loaded = True
 						config_data = json.load(open('config.json'))
-						self.config_loaded = True
+						
 						self.room = config_data.get('room')
-						self.ip = config_data.get('ip')
+						self.ip = config_data.get('host')
 						self.whisper = config_data.get('whisper')
-
+						self.password = config_data.get('password')
+						self.config_loaded = True
+						
 			poll_thread = threading.Thread(target=poll_server, daemon=True)
 			poll_thread.start()
 			
@@ -211,5 +276,8 @@ class RemoteConfig():
 
 	def get_whisper(self):
 		return self.whisper
+	
+	def get_password(self):
+		return self.password
 	
 		

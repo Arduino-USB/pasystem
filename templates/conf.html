@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Device Manager</title>
+</head>
+<body>
+    <h1>Device Manager</h1>
+    <ul id="device-list"></ul>
+
+    <template id="device-template">
+        <li>
+            <div>
+                <strong>IP:</strong> <span class="ip"></span>
+                <button class="edit-btn">Edit</button>
+                <button class="wipe-btn">Wipe</button>
+            </div>
+            <div class="config-editor" style="display:none; margin-left:20px;">
+                <label>
+                    Room: <input type="text" class="room">
+                </label><br>
+                <label>
+                    Host: <input type="text" class="host" disabled>
+                </label>
+                <label>
+                    <input type="checkbox" class="edit-host"> I know what I’m doing!
+                </label><br>
+                <label>
+                    Whisper: <input type="text" class="whisper">
+                </label><br>
+                <label>
+                    Password: <input type="text" class="password">
+                </label><br>
+                <button class="save-btn">Save</button>
+                <button class="cancel-btn">Cancel</button>
+            </div>
+        </li>
+    </template>
+
+    <script>
+        const openEditors = new Set();
+        const deviceMap = new Map();
+
+        let localIP = ''; // will store local IP
+
+        async function fetchLocalIP() {
+            try {
+                const res = await fetch('/get_local_ip'); // plain text response
+                const ip = await res.text();
+                return ip.trim(); // remove whitespace/newlines
+            } catch (e) {
+                console.error("Failed to fetch local IP:", e);
+                return '';
+            }
+        }
+
+        async function fetchDevices() {
+            try {
+                const devicesRes = await fetch('/get_devices');
+                const devices = await devicesRes.json();
+
+                if (!localIP) {
+                    localIP = await fetchLocalIP(); // fetch once
+                }
+
+                renderDevices(devices);
+            } catch (e) {
+                console.error("Failed to fetch devices:", e);
+            }
+        }
+
+        function renderDevices(devices) {
+            const list = document.getElementById('device-list');
+            const newIPs = new Set();
+
+            devices.forEach(device => {
+                newIPs.add(device.ip);
+
+                let li = deviceMap.get(device.ip);
+
+                if (!li) {
+                    const template = document.getElementById('device-template');
+                    const clone = template.content.cloneNode(true);
+                    li = clone.querySelector('li');
+                    list.appendChild(li);
+                    deviceMap.set(device.ip, li);
+
+                    const ipSpan = li.querySelector('.ip');
+                    const editBtn = li.querySelector('.edit-btn');
+                    const wipeBtn = li.querySelector('.wipe-btn');
+                    const editor = li.querySelector('.config-editor');
+                    const roomInput = li.querySelector('.room');
+                    const hostInput = li.querySelector('.host');
+                    const whisperInput = li.querySelector('.whisper');
+                    const passwordInput = li.querySelector('.password');
+                    const saveBtn = li.querySelector('.save-btn');
+                    const cancelBtn = li.querySelector('.cancel-btn');
+                    const editHostCheckbox = li.querySelector('.edit-host');
+
+                    ipSpan.textContent = device.ip;
+
+                    // populate editor: default host is localIP if not set
+                    roomInput.value = device.config?.room || '';
+                    hostInput.value = device.config?.host || localIP;
+                    whisperInput.value = device.config?.whisper || '';
+                    passwordInput.value = device.config?.password || '';
+
+                    editBtn.addEventListener('click', () => {
+                        editor.style.display = 'block';
+                        openEditors.add(device.ip);
+
+                        // if host input is empty, default it to localIP
+                        if (!hostInput.value) hostInput.value = localIP;
+                    });
+
+                    cancelBtn.addEventListener('click', () => {
+                        editor.style.display = 'none';
+                        openEditors.delete(device.ip);
+                    });
+
+                    editHostCheckbox.addEventListener('change', () => {
+                        hostInput.disabled = !editHostCheckbox.checked;
+                    });
+
+                    wipeBtn.addEventListener('click', async () => {
+                        try {
+                            await fetch(`http://${device.ip}:6123/wipe_config`, { method: 'POST' });
+                            alert(`Config wiped for ${device.ip}`);
+                        } catch (e) {
+                            alert(`Failed to wipe ${device.ip}: ${e}`);
+                        }
+                    });
+
+                    saveBtn.addEventListener('click', async () => {
+                        const config = {
+                            room: roomInput.value || null,
+                            host: hostInput.value || null,
+                            whisper: whisperInput.value || null,
+                            password: passwordInput.value || null
+                        };
+
+                        try {
+                            await fetch(`http://${device.ip}:6123/set_config`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(config)
+                            });
+                            alert(`Config saved for ${device.ip}`);
+                            editor.style.display = 'none';
+                            openEditors.delete(device.ip);
+                        } catch (e) {
+                            alert(`Failed to save config for ${device.ip}: ${e}`);
+                        }
+                    });
+                } else {
+                    if (!openEditors.has(device.ip)) {
+                        const roomInput = li.querySelector('.room');
+                        const hostInput = li.querySelector('.host');
+                        const whisperInput = li.querySelector('.whisper');
+                        const passwordInput = li.querySelector('.password');
+
+                        roomInput.value = device.config?.room || '';
+                        hostInput.value = device.config?.host || localIP;
+                        whisperInput.value = device.config?.whisper || '';
+                        passwordInput.value = device.config?.password || '';
+                    }
+                }
+            });
+
+            // remove devices no longer present
+            for (const [ip, li] of deviceMap.entries()) {
+                if (!newIPs.has(ip) && !openEditors.has(ip)) {
+                    li.remove();
+                    deviceMap.delete(ip);
+                }
+            }
+        }
+
+        setInterval(fetchDevices, 10000);
+        fetchDevices();
+    </script>
+</body>
+</html>

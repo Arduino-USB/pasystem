@@ -1,5 +1,6 @@
 from flask import Flask, render_template, send_file, request
-from remote_config import RemoteConfig, RestartMgr
+from remote_client import RemoteConfig, RestartMgr
+from remote_server import ConfigServer
 from mumbleman import MumbleMgr, PyAudioMgr
 from markupsafe import Markup
 import threading
@@ -14,23 +15,22 @@ import ast
 sys.path.append(os.getcwd())
 # Blueprints
 
-#Mumble init
 
-remote = RemoteConfig()
+#Remote config server
 
+config_server = ConfigServer()
 
-while not remote.config_loaded:
-	time.sleep(5)
+#Because this is assmued to be the server, assuming the server runs on this machine
 
+m = MumbleMgr("127.0.0.1", "Office", whisper=None, password="password")
 
-m = MumbleMgr(remote.get_ip(), remote.get_room(), whisper=remote.get_whisper())
-
-restar_mgr = RestartMgr(m)
 a = PyAudioMgr(input=True)
 a.open_stream()
 
 m.start_ffmpeg_process()
 
+
+devices = []
 
 class ContinousPlayback(threading.Thread):
 	def __init__(self):
@@ -188,6 +188,14 @@ def stop_playing_file():
 	playing_file_local = False
 	m.playing_audio = False
 	return "O.K", 200
-		
+
+
+
+#CONFIGURATOR
+@app.route('/register')
+def register():
+	devices.append({"ip" : request.remote_addr, "config" : None})
+	print(f"[register] Device {request.remote_addr} added to list!")
+	
 if __name__ == "__main__":
-	app.run(debug=False)
+	app.run(debug=False, host="0.0.0.0", port=5000)
