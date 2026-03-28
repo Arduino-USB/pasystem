@@ -101,7 +101,6 @@ class PortIdentify:
 			return None
 
 		ip = str(ip)
-		#print(f"[port_identify] Checking IP: {ip}")
 
 		try:
 			with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -128,7 +127,6 @@ class PortIdentify:
 					except Exception as e:
 						print(f"[port_identify] HTTP check failed for {ip}: {e}")
 				else:
-					#print(f"[port_identify] Port closed on {ip}")
 					pass
 
 		except Exception as e:
@@ -168,14 +166,11 @@ class PortIdentify:
 class ConfigClient:
 	def __init__(self):
 		self.app = Flask(__name__)
-		#self.app.logger.disabled = True
-		
+		self.app.logger.disabled = True
 		self.config_resv = False
-
 		self.keymgr = KeyMgr()			
-	
-		#log = logging.getLogger('werkzeug')
-		#log.disabled = True
+		log = logging.getLogger('werkzeug') 
+		log.disabled = True
 		@self.app.before_request
 		def handle_options():
 			if request.method == 'OPTIONS':
@@ -183,9 +178,8 @@ class ConfigClient:
 				response.headers['Access-Control-Allow-Origin'] = '*'
 				response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
 				response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
-				return response  # only short-circuit OPTIONS
+				return response
 
-		# Add CORS headers to all responses
 		@self.app.after_request
 		def add_cors_headers(response):
 			response.headers['Access-Control-Allow-Origin'] = '*'
@@ -201,7 +195,6 @@ class ConfigClient:
 		def set_config():
 			config = request.get_json()
 			
-		
 			print("[flask_app] Writing to file")	
 			
 			self.config_resv = True			
@@ -241,6 +234,8 @@ class RemoteConfig():
 		self.ip_addr = self.port_idenifier.scan_network()
 		self.config_loaded = False
 		
+		# 🔽 ADDED: start alive watchdog
+		threading.Thread(target=self.watchdog_alive, daemon=True).start()
 
 		if 'config.json' in os.listdir():
 			config_data = json.load(open('config.json'))
@@ -267,6 +262,30 @@ class RemoteConfig():
 						
 			poll_thread = threading.Thread(target=poll_server, daemon=True)
 			poll_thread.start()
+
+	# 🔽 ADDED: alive check + rescan
+	def watchdog_alive(self):
+		print("[remote_config] Alive watchdog started")
+		while True:
+			time.sleep(3)
+
+			if not self.ip_addr:
+				continue
+
+			try:
+				url = f"http://{self.ip_addr}:6122/alive"
+				r = requests.get(url, timeout=1)
+
+				if r.status_code == 200:
+					continue
+				else:
+					print("[remote_config] Alive check failed (bad status), rescanning...")
+
+			except Exception:
+				print("[remote_config] Alive check failed (exception), rescanning...")
+
+			self.port_idenifier.found_ip = None
+			self.ip_addr = self.port_idenifier.scan_network()
 			
 	def get_room(self):
 		return self.room
@@ -279,5 +298,3 @@ class RemoteConfig():
 	
 	def get_password(self):
 		return self.password
-	
-		

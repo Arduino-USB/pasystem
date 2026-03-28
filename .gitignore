@@ -6,3 +6,4 @@ config.json
 vnext_natives_win32_x64/
 ffmpeg.exe
 Mumble/
+mumble-server.log

@@ -1,4 +1,5 @@
 from mumbleman import MumbleMgr, PyAudioMgr
+from remote_client import RemoteConfig, RestartMgr
 import RPi.GPIO as GPIO
 import threading
 import time
@@ -11,11 +12,21 @@ GPIO.setup(PUSH_TO_TALK_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 GPIO.setup(ALARM_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
 # --- Setup audio/mumble ---
-m = MumbleMgr("192.168.0.20", "eho", password="password",whisper="Office")
+remote = RemoteConfig()
+
+
+while not remote.config_loaded:
+	time.sleep(5)
+
+
+m = MumbleMgr(remote.get_ip(), remote.get_room(), whisper=remote.get_whisper(), password=remote.get_password())
+
+restart_mgr = RestartMgr(m)
 a = PyAudioMgr(input=True)
 a.open_stream()
 
 m.start_ffmpeg_process()
+
 
 
 alarm_button_toggle = False
