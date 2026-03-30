@@ -15,12 +15,12 @@ class MumbleMgr:
 		self.room = room
 		self.whisper = whisper
 
+		self.play_audio_callback = None
+			
 		self.mumble = None
 		self.muted = False
 		self.running = True
 
-		self.audiomgr = PyAudioMgr(output=True)
-		self.audiomgr.open_stream()
 
 		# Start the connect_loop in a separate thread to avoid blocking
 		threading.Thread(target=self.connect_loop, daemon=True).start()
@@ -61,7 +61,7 @@ class MumbleMgr:
 			pass
 
 		self.safe_disconnect()
-		self.audiomgr.close_stream()
+
 
 	def connect_loop(self, retry_delay=5):
 		while self.running:
@@ -141,11 +141,11 @@ class MumbleMgr:
 
 		if soundchunk.pcm is None:
 			return
+		
+		if callable(self.play_audio_callback):
+			play_audio_callback(user, soundchunk)
 
-		try:
-			self.audiomgr.stream.write(soundchunk.pcm)
-		except:
-			pass
+
 
 	def play_file(self, file_path):
 		self.playing_audio = True  # start playing

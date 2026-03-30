@@ -22,9 +22,19 @@ while not remote.config_loaded:
 m = MumbleMgr(remote.get_ip(), remote.get_room(), whisper=remote.get_whisper(), password=remote.get_password())
 
 restart_mgr = RestartMgr(m)
-a = PyAudioMgr(input=True)
-a.open_stream()
+a_input = PyAudioMgr(input=True)
+a_input.open_stream()
 
+a_output = PyAudioMgr(output=True)
+a_output.open_stream()
+
+def play_audio_callaback(user, soundchunk):
+	try:
+		self.audiomgr.stream.write(soundchunk.pcm)
+	except:
+		pass
+
+m.play_audio_callaback = play_audio_callaback
 m.start_ffmpeg_process()
 
 
@@ -38,11 +48,11 @@ def push_to_talk():
         if GPIO.input(PUSH_TO_TALK_PIN) == GPIO.LOW:  # button pressed
             print("[main] Push-To-Talk Button pressed")
             while GPIO.input(PUSH_TO_TALK_PIN) == GPIO.LOW:
-                #a.flush_audio() 
-                data = a.get_audio_chunk()
+                #a_input.flush_audio() 
+                data = a_input.get_audio_chunk()
                 m.play_raw_audio(data)
         else:
-            a.flush_audio()
+            a_input.flush_audio()
             time.sleep(0.01)
 
 
