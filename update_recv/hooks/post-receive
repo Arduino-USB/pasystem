@@ -1,0 +1,9 @@
+#!/bin/bash
+# Deploy to parent directory of the bare repo
+TARGET_DIR="$(dirname "$(pwd)")"
+
+# Make sure it exists (it should)
+mkdir -p "$TARGET_DIR"
+
+# Checkout the pushed branch (master/main) into parent dir
+GIT_WORK_TREE="$TARGET_DIR" git checkout -f
