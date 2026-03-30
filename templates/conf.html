@@ -3,8 +3,122 @@
 <head>
     <meta charset="UTF-8">
     <title>Device Manager</title>
+    <style>
+        /* Body setup */
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
+            margin: 0;
+            padding-top: 60px; /* space for fixed topbar */
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+        }
+
+        /* Topbar/navbar */
+        .topbar {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 100%;
+            height: 50px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            background-color: #ddd;
+            padding: 0 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+
+        .topbar a {
+            width: 40px;
+            height: 40px;
+            display: block;
+            text-decoration: none;
+            margin-left: 10px;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .topbar .home-btn {
+            background-image: url('/static/home.svg');
+        }
+
+        /* Page heading */
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        /* Device list */
+        #device-list {
+            list-style: none;
+            padding: 0;
+            width: 90%;
+            max-width: 800px;
+        }
+
+        #device-list li {
+            background-color: #fff;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        #device-list li div {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .edit-btn, .wipe-btn, .save-btn, .cancel-btn {
+            border: none;
+            padding: 5px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            background-color: #06a;
+            color: white;
+            transition: background-color 0.2s;
+        }
+
+        .edit-btn:hover, .save-btn:hover, .cancel-btn:hover {
+            background-color: #048;
+        }
+
+        .wipe-btn:hover {
+            background-color: #c00;
+        }
+
+        .config-editor {
+            margin-top: 10px;
+            background-color: #eef;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .config-editor label {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .config-editor input[type="text"] {
+            padding: 5px;
+            border-radius: 6px;
+            border: 1px solid #aaa;
+            width: 200px;
+        }
+    </style>
 </head>
 <body>
+    <!-- Topbar/navbar -->
+    <div class="topbar">
+        <a class="home-btn" href="http://127.0.0.1:5000"></a>
+    </div>
+
     <h1>Device Manager</h1>
     <ul id="device-list"></ul>
 
@@ -16,22 +130,12 @@
                 <button class="edit-btn">Edit</button>
                 <button class="wipe-btn">Wipe</button>
             </div>
-            <div class="config-editor" style="display:none; margin-left:20px;">
-                <label>
-                    Room: <input type="text" class="room">
-                </label><br>
-                <label>
-                    Host: <input type="text" class="host" disabled>
-                </label>
-                <label>
-                    <input type="checkbox" class="edit-host"> I know what I’m doing!
-                </label><br>
-                <label>
-                    Whisper: <input type="text" class="whisper">
-                </label><br>
-                <label>
-                    Password: <input type="text" class="password">
-                </label><br>
+            <div class="config-editor" style="display:none;">
+                <label>Room: <input type="text" class="room"></label>
+                <label>Host: <input type="text" class="host" disabled></label>
+                <label><input type="checkbox" class="edit-host"> I know what I’m doing!</label>
+                <label>Whisper: <input type="text" class="whisper"></label>
+                <label>Password: <input type="text" class="password"></label>
                 <button class="save-btn">Save</button>
                 <button class="cancel-btn">Cancel</button>
             </div>
@@ -57,10 +161,9 @@
         async function fetchDeviceConfig(ip) {
             try {
                 const res = await fetch(`http://${ip}:6123/get_config`);
-                if (!res.ok) return null; // status 400 or not ok
-                const cfg = await res.json();
-                return cfg;
-            } catch (e) {
+                if (!res.ok) return null;
+                return await res.json();
+            } catch {
                 return null;
             }
         }
@@ -86,8 +189,6 @@
                 newIPs.add(device.ip);
 
                 let li = deviceMap.get(device.ip);
-
-                // fetch config from device
                 let config = await fetchDeviceConfig(device.ip) || {};
                 config.room = config.room || '';
                 config.host = config.host || localIP;
@@ -117,7 +218,6 @@
                     ipSpan.textContent = device.ip;
                     roomLabel.textContent = config.room || 'Unassigned';
 
-                    // populate editor
                     roomInput.value = config.room;
                     hostInput.value = config.host;
                     whisperInput.value = config.whisper;
@@ -179,7 +279,6 @@
                 }
             }
 
-            // remove devices no longer present
             for (const [ip, li] of deviceMap.entries()) {
                 if (!newIPs.has(ip) && !openEditors.has(ip)) {
                     li.remove();

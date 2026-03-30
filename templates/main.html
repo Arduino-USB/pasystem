@@ -1,188 +1,226 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>PA System</title>
+    <title>PA System</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start; /* start from top for content */
+            height: 100vh;
+            margin: 0;
+            padding-top: 10px; /* spacing for topbar */
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+        }
+
+        /* Topbar/navbar */
+        .topbar {
+            position: fixed; /* fixed at top */
+            top: 0;
+            right: 0;
+            width: 100%;
+            height: 50px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            background-color: #ddd;
+            padding: 0 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+
+        .topbar a {
+            width: 40px;
+            height: 40px;
+            display: block;
+            text-decoration: none;
+            margin-left: 10px;
+        }
+
+        .topbar .home-btn {
+            background-image: url('/static/wrench.svg');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        /* Main content container */
+        .cont {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            align-items: center;
+            margin-top: 70px; /* avoid topbar overlap */
+        }
+
+        .cont .emg {
+            width: 100px;
+            height: 100px;
+            border-radius: 25px;
+            background-color: rgba(255, 0 , 0, 1);
+            background-image: url('/static/bell.svg');
+            background-size: 50% 50%;
+            background-repeat: no-repeat;
+            background-position: center;
+            transition: background-color 0.2s;
+        }
+
+        .cont .emg.active {
+            background-color: rgba(0, 255, 0, 1);
+        }
+
+        .cont .p2t {
+            width: 200px;
+            height: 200px;
+            border-radius: 50px;
+            background-color: rgba(0, 107, 179, 1);
+            background-image: url('/static/microphone.svg');
+            background-size: 50% 50%;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .cont .p2t:active {
+            background-color: rgba(1, 69, 115, 1);
+        }
+
+        .cont .btn-row {
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+        }
+
+        .cont .btn-row .btn {
+            border-radius: 12.5px;
+            width: 50px;
+            height: 50px;
+            background-color: rgba(250, 211, 54, 1);
+            border: none;
+            cursor: pointer;
+        }
+
+        .cont .btn-row .btn:active {
+            background-color: rgba(171, 145, 41, 1);
+        }
+
+        .drp {}
+    </style>
 </head>
 <body>
-	<style>
-		body {
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			height: 100vh;
-		}
-		
-		.cont {
-			display: flex;
-			flex-direction: column;
-			gap: 20px;
-			align-items: center;
-		}
-		.cont .emg {
-			width: 100px;
-			height: 100px;
-			border-radius: 25px;
-			background-color: rgba(255, 0 , 0, 1);
-			background-image: url('/static/bell.svg');
-			background-size: 50% 50%;
-			background-repeat: no-repeat;
-			background-position: center;
-			transition: background-color 0.2s;
-		}
-		.cont .emg.active {
-			background-color: rgba(0, 255, 0, 1);
-		}
-		
-		.cont .p2t {
-			width: 200px;
-			height: 200px;
-			border-radius: 50px;
-			background-color: rgba(0, 107, 179, 1);
-			background-image: url('/static/microphone.svg');
-			background-size: 50% 50%;
-			background-repeat: no-repeat;
-			background-position: center;
-		}
-		.cont .p2t:active {
-			background-color: rgba(1, 69, 115, 1);
-		}
-		
-		.cont .btn-row .btn {
-			flex-direction: row; 
-			border-radius: 12.5px;
-			width: 50px;
-			height: 50px;
-			background-color: rgba(250, 211, 54, 1);
-		}
-		
-		.cont .btn-row .btn:active {
-			background-color: rgba(171, 145, 41, 1);
-		}
-		
-		.cont .btn-row {
-			flex-direction: row;
-			gap: 10px;
-		}
-		
-		.cont .drp {}
-	</style>
+    <!-- Topbar/navbar -->
+    <div class="topbar">
+        <a class="home-btn" href="http://127.0.0.1:6122"></a>
+    </div>
 
-	<div class="cont">
-		<button
-			class="p2t"
-			ontouchstart="toggleStream('on')" 
-			ontouchend="toggleStream('off')" 
-			onmousedown="toggleStream('on')" 
-			onmouseup="toggleStream('off')" 
-			onmouseleave="toggleStream('off')">
-		</button>
+    <!-- Main content -->
+    <div class="cont">
+        <button
+            class="p2t"
+            ontouchstart="toggleStream('on')" 
+            ontouchend="toggleStream('off')" 
+            onmousedown="toggleStream('on')" 
+            onmouseup="toggleStream('off')" 
+            onmouseleave="toggleStream('off')">
+        </button>
 
-		<div class="drp" id="userContainer">
-			<select class="userSelect"></select>
-		</div>
-		
-		<div class="btn-row">
-			<button class="btn" id="addBtn" onclick="addUserDropdown()">[+]</button>
-			<button class="btn" onclick="removeUserDropdown()">[-]</button>
-		</div>
-		
-		<br>
-		
-		<button class="emg" id="alarmBtn"></button>
-	</div>
+        <div class="drp" id="userContainer">
+            <select class="userSelect"></select>
+        </div>
+        
+        <div class="btn-row">
+            <button class="btn" id="addBtn" onclick="addUserDropdown()">[+]</button>
+            <button class="btn" onclick="removeUserDropdown()">[-]</button>
+        </div>
+        
+        <br>
+        
+        <button class="emg" id="alarmBtn"></button>
+    </div>
 
-	<script>
-		let usersData = []; // Full list of users including BROADCAST
+    <script>
+        let usersData = []; // Full list of users including BROADCAST
 
-		// Load users on page load
-		window.onload = function() {
-			fetch('/get_users')
-				.then(response => response.json())
-				.then(data => {
-					usersData = data.users;
-					updateAllDropdowns();
-				});
-		};
+        window.onload = function() {
+            fetch('/get_users')
+                .then(response => response.json())
+                .then(data => {
+                    usersData = data.users;
+                    updateAllDropdowns();
+                });
+        };
 
-		// Populate a single dropdown with available users
-		function populateSelect(select) {
-			select.innerHTML = '';
-			const singleDropdown = document.querySelectorAll('.userSelect').length === 1;
+        function populateSelect(select) {
+            select.innerHTML = '';
+            const singleDropdown = document.querySelectorAll('.userSelect').length === 1;
+            const selectedUsers = getSelectedUsers().filter(u => u !== select.value);
 
-			// Users already selected in other dropdowns
-			const selectedUsers = getSelectedUsers().filter(u => u !== select.value);
+            usersData.forEach(user => {
+                if (user === 'BROADCAST' && !singleDropdown) return;
+                if (user !== 'BROADCAST' && selectedUsers.includes(user)) return;
+                let option = document.createElement('option');
+                option.value = user;
+                option.text = user;
+                select.appendChild(option);
+            });
 
-			usersData.forEach(user => {
-				if (user === 'BROADCAST' && !singleDropdown) return; // only allow BROADCAST in single dropdown
-				if (user !== 'BROADCAST' && selectedUsers.includes(user)) return; // no duplicates
-				let option = document.createElement('option');
-				option.value = user;
-				option.text = user;
-				select.appendChild(option);
-			});
+            if ([...select.options].some(o => o.value === select.value)) {
+                select.value = select.value;
+            }
+        }
 
-			// Keep current value selected if still valid
-			if ([...select.options].some(o => o.value === select.value)) {
-				select.value = select.value;
-			}
-		}
+        function updateAllDropdowns() {
+            document.querySelectorAll('.userSelect').forEach(select => populateSelect(select));
+            updateAddButton();
+        }
 
-		// Re-populate all dropdowns
-		function updateAllDropdowns() {
-			document.querySelectorAll('.userSelect').forEach(select => populateSelect(select));
-			updateAddButton();
-		}
+        function updateAddButton() {
+            const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
+            const currentDropdowns = document.querySelectorAll('.userSelect').length;
+            document.getElementById('addBtn').disabled = currentDropdowns >= maxDropdowns;
+        }
 
-		// Control the [+] button
-		function updateAddButton() {
-			const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
-			const currentDropdowns = document.querySelectorAll('.userSelect').length;
-			document.getElementById('addBtn').disabled = currentDropdowns >= maxDropdowns;
-		}
+        function addUserDropdown() {
+            const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
+            const container = document.getElementById('userContainer');
+            if (container.children.length >= maxDropdowns) return;
 
-		function addUserDropdown() {
-			const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
-			const container = document.getElementById('userContainer');
-			if (container.children.length >= maxDropdowns) return;
+            const newSelect = document.createElement('select');
+            newSelect.className = 'userSelect';
+            newSelect.onchange = updateAllDropdowns;
+            container.appendChild(newSelect);
+            updateAllDropdowns();
+        }
 
-			const newSelect = document.createElement('select');
-			newSelect.className = 'userSelect';
-			newSelect.onchange = updateAllDropdowns; // refresh options when selection changes
-			container.appendChild(newSelect);
-			updateAllDropdowns();
-		}
+        function removeUserDropdown() {
+            const container = document.getElementById('userContainer');
+            if (container.children.length > 1) {
+                container.removeChild(container.lastChild);
+                updateAllDropdowns();
+            }
+        }
 
-		function removeUserDropdown() {
-			const container = document.getElementById('userContainer');
-			if (container.children.length > 1) {
-				container.removeChild(container.lastChild);
-				updateAllDropdowns();
-			}
-		}
+        function getSelectedUsers() {
+            return Array.from(document.querySelectorAll('.userSelect')).map(s => s.value);
+        }
 
-		function getSelectedUsers() {
-			return Array.from(document.querySelectorAll('.userSelect')).map(s => s.value);
-		}
+        function toggleStream(mode) {
+            const users = getSelectedUsers();
+            fetch('/toggle_stream?users=' + encodeURIComponent(JSON.stringify(users)) + '&mode=' + mode);
+        }
 
-		function toggleStream(mode) {
-			const users = getSelectedUsers();
-			fetch('/toggle_stream?users=' + encodeURIComponent(JSON.stringify(users)) + '&mode=' + mode);
-		}
-
-		// Alarm button logic
-		const alarmBtn = document.getElementById('alarmBtn');
-		alarmBtn.addEventListener('click', () => {
-			const users = getSelectedUsers();
-			if (alarmBtn.classList.contains('active')) {
-				// Currently green, stop playing
-				alarmBtn.classList.remove('active');
-				fetch('/stop_playing_file?users=' + encodeURIComponent(JSON.stringify(users)));
-			} else {
-				// Currently red, start playing
-				alarmBtn.classList.add('active');
-				fetch('/play_file?users=' + encodeURIComponent(JSON.stringify(users)) + '&file=alarm.wav');
-			}
-		});
-	</script>
+        const alarmBtn = document.getElementById('alarmBtn');
+        alarmBtn.addEventListener('click', () => {
+            const users = getSelectedUsers();
+            if (alarmBtn.classList.contains('active')) {
+                alarmBtn.classList.remove('active');
+                fetch('/stop_playing_file?users=' + encodeURIComponent(JSON.stringify(users)));
+            } else {
+                alarmBtn.classList.add('active');
+                fetch('/play_file?users=' + encodeURIComponent(JSON.stringify(users)) + '&file=alarm.wav');
+            }
+        });
+    </script>
 </body>
 </html>

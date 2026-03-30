@@ -58,7 +58,6 @@ class PortIdentify:
 	def __init__(self, target_port):
 		self.TARGET_PORT = target_port
 		self.found_ip = None
-		self.keymgr = KeyMgr()
 		print(f"[port_identify] Initialized with target port {self.TARGET_PORT}")
 
 	def get_network(self):
@@ -99,7 +98,7 @@ class PortIdentify:
 					print(f"[port_identify] Port open on {ip}, attempting HTTP check")
 
 					try:
-						url = f"http://{ip}:{self.TARGET_PORT}/register?key={self.keymgr.get_key()}"
+						url = f"http://{ip}:{self.TARGET_PORT}/register"
 						print(f"[port_identify] Sending request to {url}")
 
 						response = requests.get(url, timeout=1)
