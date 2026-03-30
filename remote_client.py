@@ -6,6 +6,7 @@ from flask import Flask, request, make_response
 
 class RestartMgr:
 	def __init__(self, m):
+		print("")
 		self.m = m
 		self.checksum = self.get_checksum('config.json')
 		self.watchdog = threading.Thread(target=self.config_watchdog, daemon=True)
@@ -36,9 +37,10 @@ class RestartMgr:
 					config = json.load(open('config.json', 'r'))
 						
 					host = config.get("host")
-					password = 	config.get("host")
+					password = 	config.get("password")
 					room = config.get("room")
 					whisper = config.get("whisper")
+			
 					self.m.host = host
 					self.m.password = password
 					self.m.whisper = whisper
@@ -47,25 +49,7 @@ class RestartMgr:
 				else:
 					print("[config_watchdog] Config wiped, killing client")
 					self.m.close()
-					sys.exit(0)
-
-class KeyMgr:
-	def __init__(self):
-		print("[key_setup] Setting up key")
-		
-		self.config_loaded = False
-		
-		if 'key' in os.listdir():
-			with open('key' , 'r') as f:
-				self.key = f.read()
-		else:
-			with open('key' , 'w') as f:
-				self.key = ''.join(random.choices(string.ascii_letters + string.digits, k=20))
-				f.write(self.key)
-	
-	def get_key(self):
-		return self.key		
-
+					
 
 
 
@@ -170,11 +154,10 @@ class PortIdentify:
 class ConfigClient:
 	def __init__(self):
 		self.app = Flask(__name__)
-		self.app.logger.disabled = True
-		self.config_resv = False
-		self.keymgr = KeyMgr()			
-		log = logging.getLogger('werkzeug') 
-		log.disabled = True
+		#self.app.logger.disabled = True
+		#self.config_resv = False			
+		#log = logging.getLogger('werkzeug') 
+		#log.disabled = True
 		@self.app.before_request
 		def handle_options():
 			if request.method == 'OPTIONS':
@@ -195,11 +178,11 @@ class ConfigClient:
 		threading.Thread(target=self.app.run, kwargs={"host": "0.0.0.0", "port": 6123}, daemon=True).start()
 
 	def setup_routes(self):
-		@self.app.route('/set_config', methods=['GET', 'POST', 'OPTIONS', "PUT", "DELETEt"])
+		@self.app.route('/set_config', methods=['GET', 'POST', 'OPTIONS', "PUT", "DELETE"])
 		def set_config():
 			config = request.get_json()
 			
-			print("[flask_app] Writing to file")	
+			print("[config_client] Writing to file")	
 			
 			self.config_resv = True			
 			
@@ -208,15 +191,14 @@ class ConfigClient:
 			
 			return "O.K", 200		
 			
-		@self.app.route('/wipe_config')
+		@self.app.route('/wipe_config', methods=['GET', 'POST', 'OPTIONS', "PUT", "DELETE"])
 		def wipe_config():
-
-			if key != self.keymgr.get_key():
-				print("[flask_app] Wrong key")
-				return "Key Error", 400
 			
 			if 'config.json' in os.listdir():
-				os.remove('config.json')
+				print("[config_client] Emptying file")
+				with open('config.json', 'w') as f:
+					f.write('{"room": "", "host": "", "whisper": "", "password": ""}')
+					f.close()
 				return "O.K", 200		
 			else:
 				return "File doen't exist", 400
@@ -244,7 +226,7 @@ class RemoteConfig():
 		self.ip_addr = self.port_idenifier.scan_network()
 		self.config_loaded = False
 		
-		# 🔽 ADDED: start alive watchdog
+
 		threading.Thread(target=self.watchdog_alive, daemon=True).start()
 
 		if 'config.json' in os.listdir():
@@ -260,10 +242,10 @@ class RemoteConfig():
 
 				while not self.config_loaded:
 					time.sleep(5)
-					if self.config_resv_server.config_resv:
+					if 'config.json' in os.listdir():
 						print("[remote_config] Config recieved from server, applying")
 						config_data = json.load(open('config.json'))
-						
+					
 						self.room = config_data.get('room')
 						self.ip = config_data.get('host')
 						self.whisper = config_data.get('whisper')
@@ -273,7 +255,7 @@ class RemoteConfig():
 			poll_thread = threading.Thread(target=poll_server, daemon=True)
 			poll_thread.start()
 
-	# 🔽 ADDED: alive check + rescan
+	
 	def watchdog_alive(self):
 		print("[remote_config] Alive watchdog started")
 		while True:

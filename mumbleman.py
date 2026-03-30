@@ -18,23 +18,28 @@ class MumbleMgr:
 		self.mumble = None
 		self.muted = False
 		self.running = True
-		
 
 		self.audiomgr = PyAudioMgr(output=True)
 		self.audiomgr.open_stream()
 
-		self.connect_loop()
+		# Start the connect_loop in a separate thread to avoid blocking
+		threading.Thread(target=self.connect_loop, daemon=True).start()
 
-		self.mumble.callbacks.set_callback(
-			constants.PYMUMBLE_CLBK_SOUNDRECEIVED,
-			self.__play_sound
-		)
+		self.mumble_callbacks_setup()
 
 		if whisper:
 			print("[whisper] Starting whisper thread")
 			threading.Thread(target=self.set_whisper_loop, daemon=True).start()
 
 		threading.Thread(target=self.connection_watchdog, daemon=True).start()
+
+	def mumble_callbacks_setup(self):
+		if self.mumble:
+			self.mumble.callbacks.set_callback(
+				constants.PYMUMBLE_CLBK_SOUNDRECEIVED,
+				self.__play_sound
+			)
+
 	def safe_disconnect(self):
 		try:
 			if self.mumble:
@@ -60,11 +65,10 @@ class MumbleMgr:
 
 	def connect_loop(self, retry_delay=5):
 		while self.running:
-			print("[conn] Attempting connection...")
-
 			try:
 				self.safe_disconnect()
 
+				print(f"[conn] Attempting connection to ({self.host}, {self.room}, {self.whisper}, {self.password})")
 				self.mumble = Mumble(self.host, self.room, password=self.password)
 				self.mumble.start()
 				self.mumble.is_ready()
@@ -94,7 +98,6 @@ class MumbleMgr:
 
 		while self.running:
 			time.sleep(2)
-
 			try:
 				if not self.mumble or self.mumble.connected != constants.PYMUMBLE_CONN_STATE_CONNECTED:
 					print("[conn] Lost connection, reconnecting")
@@ -145,42 +148,39 @@ class MumbleMgr:
 			pass
 
 	def play_file(self, file_path):
-			self.playing_audio = True  # start playing
+		self.playing_audio = True  # start playing
 
-			def feed_audio():
+		def feed_audio():
+			while self.playing_audio:
+				# Start ffmpeg process for this iteration
+				command = [
+					"ffmpeg",
+					"-i", file_path,
+					"-acodec", "pcm_s16le",
+					"-f", "s16le",
+					"-ab", "192k",
+					"-ac", "1",
+					"-ar", "48000",
+					"-"
+				]
+
+				process = sp.Popen(command, stdout=sp.PIPE, stderr=sp.DEVNULL)
+
 				while self.playing_audio:
-					# Start ffmpeg process for this iteration
-					command = [
-						"ffmpeg",
-						"-i", file_path,
-						"-acodec", "pcm_s16le",
-						"-f", "s16le",
-						"-ab", "192k",
-						"-ac", "1",
-						"-ar", "48000",
-						"-"
-					]
+					chunk = process.stdout.read(4096)
+					if not chunk:
+						break  # end of file reached, restart loop
+					if self.mumble:
+						self.mumble.sound_output.add_sound(chunk)
+					
+					time.sleep(4096 / (48000 * 2 * 1))
 
-					process = sp.Popen(command, stdout=sp.PIPE, stderr=sp.DEVNULL)
+				if process.poll() is None:
+					process.kill()
+					process.wait()
 
-					while self.playing_audio:
-						chunk = process.stdout.read(4096)
-						if not chunk:
-							break  # end of file reached, restart loop
-						if self.mumble:
-							self.mumble.sound_output.add_sound(chunk)
-						
-						# sleep to avoid overwhelming CPU
-						time.sleep(4096 / (48000 * 2 * 1))
-
-					# stop ffmpeg when done
-					if process.poll() is None:
-						process.kill()
-						process.wait()
-
-			# run audio feeding in a separate thread
-			thread = threading.Thread(target=feed_audio, daemon=True)
-			thread.start()
+		thread = threading.Thread(target=feed_audio, daemon=True)
+		thread.start()
 
 	def play_raw_audio(self, raw_audio_bytes):
 		if self.mumble:
@@ -221,7 +221,6 @@ class MumbleMgr:
 	def restart(self, host=None, room=None, password=None, whisper=None):
 		print("[conn] Restarting Mumble only")
 
-		# update params if provided
 		if host is not None:
 			self.host = host
 		if room is not None:
@@ -231,11 +230,9 @@ class MumbleMgr:
 		if whisper is not None:
 			self.whisper = whisper
 
-		# disconnect current client
 		self.safe_disconnect()
 		time.sleep(1)
 
-		# reconnect
 		try:
 			self.mumble = Mumble(self.host, self.room, password=self.password)
 			self.mumble.start()
@@ -255,7 +252,6 @@ class MumbleMgr:
 
 		except Exception as e:
 			print(f"[conn] Restart failed: {e}")
-			
 		
 
 class PyAudioMgr:
