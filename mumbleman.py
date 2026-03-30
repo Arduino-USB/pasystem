@@ -35,7 +35,6 @@ class MumbleMgr:
 			threading.Thread(target=self.set_whisper_loop, daemon=True).start()
 
 		threading.Thread(target=self.connection_watchdog, daemon=True).start()
-
 	def safe_disconnect(self):
 		try:
 			if self.mumble:
@@ -117,7 +116,7 @@ class MumbleMgr:
 					if user["name"] == self.whisper:
 						self.mumble.sound_output.set_whisper(user["session"])
 
-						if self.muted:
+						if self.mumble.users.myself["self_muted"]:
 							print("[whisper] Unmuting")
 							self.mumble.users.myself.unmute()
 							self.muted = False
@@ -125,7 +124,7 @@ class MumbleMgr:
 						found = True
 
 				if not found:
-					if not self.muted:
+					if not self.mumble.users.myself["self_muted"]:
 						print("[whisper] Muting")
 						self.mumble.users.myself.mute()
 						self.muted = True

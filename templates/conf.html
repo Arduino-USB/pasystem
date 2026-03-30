@@ -11,7 +11,8 @@
     <template id="device-template">
         <li>
             <div>
-                <strong>IP:</strong> <span class="ip"></span>
+                <strong>IP:</strong> <span class="ip"></span> -
+                <strong>Room:</strong> <span class="room-label"></span>
                 <button class="edit-btn">Edit</button>
                 <button class="wipe-btn">Wipe</button>
             </div>
@@ -40,17 +41,27 @@
     <script>
         const openEditors = new Set();
         const deviceMap = new Map();
-
-        let localIP = ''; // will store local IP
+        let localIP = '';
 
         async function fetchLocalIP() {
             try {
-                const res = await fetch('/get_local_ip'); // plain text response
+                const res = await fetch('/get_local_ip');
                 const ip = await res.text();
-                return ip.trim(); // remove whitespace/newlines
+                return ip.trim();
             } catch (e) {
                 console.error("Failed to fetch local IP:", e);
                 return '';
+            }
+        }
+
+        async function fetchDeviceConfig(ip) {
+            try {
+                const res = await fetch(`http://${ip}:6123/get_config`);
+                if (!res.ok) return null; // status 400 or not ok
+                const cfg = await res.json();
+                return cfg;
+            } catch (e) {
+                return null;
             }
         }
 
@@ -59,24 +70,29 @@
                 const devicesRes = await fetch('/get_devices');
                 const devices = await devicesRes.json();
 
-                if (!localIP) {
-                    localIP = await fetchLocalIP(); // fetch once
-                }
+                if (!localIP) localIP = await fetchLocalIP();
 
-                renderDevices(devices);
+                await renderDevices(devices);
             } catch (e) {
                 console.error("Failed to fetch devices:", e);
             }
         }
 
-        function renderDevices(devices) {
+        async function renderDevices(devices) {
             const list = document.getElementById('device-list');
             const newIPs = new Set();
 
-            devices.forEach(device => {
+            for (const device of devices) {
                 newIPs.add(device.ip);
 
                 let li = deviceMap.get(device.ip);
+
+                // fetch config from device
+                let config = await fetchDeviceConfig(device.ip) || {};
+                config.room = config.room || '';
+                config.host = config.host || localIP;
+                config.whisper = config.whisper || '';
+                config.password = config.password || '';
 
                 if (!li) {
                     const template = document.getElementById('device-template');
@@ -86,6 +102,7 @@
                     deviceMap.set(device.ip, li);
 
                     const ipSpan = li.querySelector('.ip');
+                    const roomLabel = li.querySelector('.room-label');
                     const editBtn = li.querySelector('.edit-btn');
                     const wipeBtn = li.querySelector('.wipe-btn');
                     const editor = li.querySelector('.config-editor');
@@ -98,19 +115,17 @@
                     const editHostCheckbox = li.querySelector('.edit-host');
 
                     ipSpan.textContent = device.ip;
+                    roomLabel.textContent = config.room || 'Unassigned';
 
-                    // populate editor: default host is localIP if not set
-                    roomInput.value = device.config?.room || '';
-                    hostInput.value = device.config?.host || localIP;
-                    whisperInput.value = device.config?.whisper || '';
-                    passwordInput.value = device.config?.password || '';
+                    // populate editor
+                    roomInput.value = config.room;
+                    hostInput.value = config.host;
+                    whisperInput.value = config.whisper;
+                    passwordInput.value = config.password;
 
                     editBtn.addEventListener('click', () => {
                         editor.style.display = 'block';
                         openEditors.add(device.ip);
-
-                        // if host input is empty, default it to localIP
-                        if (!hostInput.value) hostInput.value = localIP;
                     });
 
                     cancelBtn.addEventListener('click', () => {
@@ -132,7 +147,7 @@
                     });
 
                     saveBtn.addEventListener('click', async () => {
-                        const config = {
+                        const newConfig = {
                             room: roomInput.value || null,
                             host: hostInput.value || null,
                             whisper: whisperInput.value || null,
@@ -143,9 +158,10 @@
                             await fetch(`http://${device.ip}:6123/set_config`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(config)
+                                body: JSON.stringify(newConfig)
                             });
                             alert(`Config saved for ${device.ip}`);
+                            roomLabel.textContent = newConfig.room || 'Unassigned';
                             editor.style.display = 'none';
                             openEditors.delete(device.ip);
                         } catch (e) {
@@ -154,18 +170,14 @@
                     });
                 } else {
                     if (!openEditors.has(device.ip)) {
-                        const roomInput = li.querySelector('.room');
-                        const hostInput = li.querySelector('.host');
-                        const whisperInput = li.querySelector('.whisper');
-                        const passwordInput = li.querySelector('.password');
-
-                        roomInput.value = device.config?.room || '';
-                        hostInput.value = device.config?.host || localIP;
-                        whisperInput.value = device.config?.whisper || '';
-                        passwordInput.value = device.config?.password || '';
+                        li.querySelector('.room-label').textContent = config.room || 'Unassigned';
+                        li.querySelector('.room').value = config.room;
+                        li.querySelector('.host').value = config.host;
+                        li.querySelector('.whisper').value = config.whisper;
+                        li.querySelector('.password').value = config.password;
                     }
                 }
-            });
+            }
 
             // remove devices no longer present
             for (const [ip, li] of deviceMap.entries()) {

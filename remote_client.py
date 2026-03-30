@@ -29,7 +29,7 @@ class RestartMgr:
 			time.sleep(1)
 			new_checksum = self.get_checksum('config.json')
 			if self.checksum != new_checksum:
-				print("[config_watchdog] Config changed on disk")
+				print("[config_watchdog] Config changed on disk!!!")
 				
 				if 'config.json' in os.listdir():
 					self.checksum = new_checksum
@@ -39,10 +39,14 @@ class RestartMgr:
 					password = 	config.get("host")
 					room = config.get("room")
 					whisper = config.get("whisper")
+					self.m.host = host
+					self.m.password = password
+					self.m.whisper = whisper
+					self.m.room = room
 					self.m.restart(host=host, room=room, whisper=whisper, password=password)
 				else:
 					print("[config_watchdog] Config wiped, killing client")
-					m.close()
+					self.m.close()
 					sys.exit(0)
 
 class KeyMgr:
@@ -206,7 +210,6 @@ class ConfigClient:
 			
 		@self.app.route('/wipe_config')
 		def wipe_config():
-			key = request.args.get('key')
 
 			if key != self.keymgr.get_key():
 				print("[flask_app] Wrong key")
@@ -217,6 +220,13 @@ class ConfigClient:
 				return "O.K", 200		
 			else:
 				return "File doen't exist", 400
+
+		@self.app.route('/get_config')
+		def get_config():
+			if 'config.json' in os.listdir():
+				return json.load(open('config.json', 'r'))
+			else:
+				return "", 400
 		
 		@self.app.route('/alive')
 		def alive():
