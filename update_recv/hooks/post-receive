@@ -1,9 +1,50 @@
 #!/bin/bash
-# Deploy to parent directory of the bare repo
-TARGET_DIR="$(dirname "$(pwd)")"
+# Path to the bare repo
+BARE_REPO="$(pwd)"
 
-# Make sure it exists (it should)
-mkdir -p "$TARGET_DIR"
+ROLE_FILE="$BARE_REPO/ROLE"
 
-# Checkout the pushed branch (master/main) into parent dir
-GIT_WORK_TREE="$TARGET_DIR" git checkout -f
+if [[ ! -f "$ROLE_FILE" ]]; then
+    echo "ERROR: ROLE file missing in bare repo!"
+    exit 1
+fi
+
+ROLE=$(cat "$ROLE_FILE")
+
+# Check if ROLE is valid
+if [[ "$ROLE" != "server" && "$ROLE" != "client" ]]; then
+    echo "ERROR: Invalid ROLE '$ROLE'! Must be 'server' or 'client'."
+    exit 1
+fi
+
+# Parent directory (where we want to deploy)
+PARENT_DIR="$(dirname "$BARE_REPO")"
+
+# Temporary directory to check out files
+TMP_DIR="$(mktemp -d)"
+
+# Checkout the latest pushed branch into a temp dir
+git --work-tree="$TMP_DIR" checkout -f
+
+# Rsync to parent dir, excluding the bare repo folder itself
+rsync -a --delete --exclude="$(basename "$BARE_REPO")" "$TMP_DIR/" "$PARENT_DIR/"
+
+# Clean up temp dir
+rm -rf "$TMP_DIR"
+
+if [[ $ROLE == "server" ]]; then
+	cp $PARENT_DIR/systemd/mumble-headless-server.service /home/$USER/.config/systemd/user/
+	systemctl daemon-reload --user
+	systemctl restart mumble-headless-server --user 
+	sudo systemctl restart mumble-server
+elif [[ $ROLE == "client" ]]; then
+	cp $PARENT_DIR/systemd/mumble-headless-client.service /home/$USER/.config/systemd/user/
+	systemctl daemon-reload --user
+	systemctl restart mumble-headless-client --user
+fi
+# Restart services
+
+
+echo "Updates successful"
+
+
