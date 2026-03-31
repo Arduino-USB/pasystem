@@ -7,17 +7,16 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: flex-start; /* start from top for content */
+            justify-content: flex-start;
             height: 100vh;
             margin: 0;
-            padding-top: 10px; /* spacing for topbar */
+            padding-top: 10px;
             font-family: sans-serif;
             background-color: #f0f0f0;
         }
-
         /* Topbar/navbar */
         .topbar {
-            position: fixed; /* fixed at top */
+            position: fixed;
             top: 0;
             right: 0;
             width: 100%;
@@ -30,7 +29,6 @@
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             z-index: 1000;
         }
-
         .topbar a {
             width: 40px;
             height: 40px;
@@ -38,23 +36,20 @@
             text-decoration: none;
             margin-left: 10px;
         }
-
         .topbar .home-btn {
             background-image: url('/static/wrench.svg');
             background-size: contain;
             background-repeat: no-repeat;
             background-position: center;
         }
-
         /* Main content container */
         .cont {
             display: flex;
             flex-direction: column;
             gap: 20px;
             align-items: center;
-            margin-top: 70px; /* avoid topbar overlap */
+            margin-top: 70px;
         }
-
         .cont .emg {
             width: 100px;
             height: 100px;
@@ -66,11 +61,9 @@
             background-position: center;
             transition: background-color 0.2s;
         }
-
         .cont .emg.active {
             background-color: rgba(0, 255, 0, 1);
         }
-
         .cont .p2t {
             width: 200px;
             height: 200px;
@@ -81,17 +74,14 @@
             background-repeat: no-repeat;
             background-position: center;
         }
-
         .cont .p2t:active {
             background-color: rgba(1, 69, 115, 1);
         }
-
         .cont .btn-row {
             display: flex;
             flex-direction: row;
             gap: 10px;
         }
-
         .cont .btn-row .btn {
             border-radius: 12.5px;
             width: 50px;
@@ -100,12 +90,68 @@
             border: none;
             cursor: pointer;
         }
-
         .cont .btn-row .btn:active {
             background-color: rgba(171, 145, 41, 1);
         }
+        /* Audio indicators (horizontal) */
+        .audio-indicators {
+            display: flex;
+            flex-direction: row;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .audio-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: rgba(255,255,255,0.8);
+            padding: 5px 10px;
+            border-radius: 10px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        .audio-indicator.show {
+            opacity: 1;
+        }
+        .audio-indicator img {
+            width: 20px;
+            height: 20px;
+        }
 
-        .drp {}
+        /* Audio Unlock Overlay */
+        #audioUnlockOverlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            color: white;
+            font-size: 24px;
+            text-align: center;
+            transition: opacity 0.6s ease;
+        }
+        #audioUnlockOverlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #audioUnlockOverlay button {
+            margin-top: 20px;
+            padding: 15px 40px;
+            font-size: 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -114,48 +160,167 @@
         <a class="home-btn" href="http://127.0.0.1:6122"></a>
     </div>
 
+    <!-- Audio Unlock Overlay -->
+    <div id="audioUnlockOverlay">
+        <div>
+            <h2>🔊 Audio Required</h2>
+            <p>Tap or click anywhere to enable sound</p>
+            <button onclick="unlockAudio()">Enable Audio</button>
+        </div>
+    </div>
+
     <!-- Main content -->
     <div class="cont">
         <button
             class="p2t"
-            ontouchstart="toggleStream('on')" 
-            ontouchend="toggleStream('off')" 
-            onmousedown="toggleStream('on')" 
-            onmouseup="toggleStream('off')" 
+            ontouchstart="toggleStream('on')"
+            ontouchend="toggleStream('off')"
+            onmousedown="toggleStream('on')"
+            onmouseup="toggleStream('off')"
             onmouseleave="toggleStream('off')">
         </button>
-
         <div class="drp" id="userContainer">
             <select class="userSelect"></select>
         </div>
-        
+       
         <div class="btn-row">
             <button class="btn" id="addBtn" onclick="addUserDropdown()">[+]</button>
             <button class="btn" onclick="removeUserDropdown()">[-]</button>
         </div>
-        
+       
         <br>
-        
+       
         <button class="emg" id="alarmBtn"></button>
+        <!-- Audio indicators -->
+        <div class="audio-indicators" id="audioIndicators"></div>
     </div>
 
     <script>
-        let usersData = []; // Full list of users including BROADCAST
+        let usersData = [];
+        let audioCtx;
+        let audioUnlocked = false;
+
+        // ============== JITTER BUFFER (for smoother audio) ==============
+        const SAMPLE_RATE = 48000;
+        const BUFFER_QUEUE_SIZE = 8;      // Increase if still choppy (more latency)
+        const PRE_BUFFER_CHUNKS = 4;      // Chunks to wait before playing (reduces choppiness)
+
+        let audioQueue = [];
+        let nextPlayTime = 0;
+        let isBuffering = true;
+        let chunkCounter = 0;
 
         window.onload = function() {
+            // Create AudioContext early (still suspended)
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
             fetch('/get_users')
                 .then(response => response.json())
                 .then(data => {
                     usersData = data.users;
                     updateAllDropdowns();
                 });
+
+            startAudioStream();
+
+            // Unlock audio on first user gesture
+            document.addEventListener('click', unlockAudio, { once: true });
+            document.addEventListener('touchstart', unlockAudio, { once: true });
         };
+
+        async function unlockAudio() {
+            if (audioUnlocked) return;
+
+            try {
+                if (audioCtx.state === 'suspended') {
+                    await audioCtx.resume();
+                    console.log('AudioContext resumed! State:', audioCtx.state);
+                }
+                audioUnlocked = true;
+
+                const overlay = document.getElementById('audioUnlockOverlay');
+                overlay.classList.add('hidden');
+                setTimeout(() => {
+                    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+                }, 800);
+            } catch (err) {
+                console.error("Failed to resume AudioContext:", err);
+            }
+        }
+
+        /* ---------- AUDIO STREAM HANDLER with buffering ---------- */
+        const audioIndicators = document.getElementById('audioIndicators');
+        const activeIndicators = {};
+
+        function startAudioStream() {
+            const evtSource = new EventSource("/audio_stream");
+            evtSource.onmessage = async (event) => {
+                if (!audioUnlocked) return;
+
+                const msg = JSON.parse(event.data);
+                const user = msg.user;
+                const base64Chunk = msg.soundchunk;
+
+                showUserIndicator(user);
+
+                const raw = Uint8Array.from(atob(base64Chunk), c => c.charCodeAt(0));
+                queuePCMChunk(raw);        // ← Changed: now uses queue instead of direct play
+            };
+        }
+
+        function queuePCMChunk(pcmData) {
+            if (!audioCtx || audioCtx.state !== 'running') return;
+
+            const buffer = audioCtx.createBuffer(1, pcmData.length / 2, SAMPLE_RATE);
+            const channel = buffer.getChannelData(0);
+
+            for (let i = 0; i < pcmData.length; i += 2) {
+                let sample = pcmData[i] | (pcmData[i + 1] << 8);
+                if (sample >= 0x8000) sample -= 0x10000;
+                channel[i / 2] = sample / 32768;
+            }
+
+            chunkCounter++;
+
+            // Pre-buffering phase
+            if (isBuffering && chunkCounter < PRE_BUFFER_CHUNKS) {
+                audioQueue.push({ buffer });
+                return;
+            }
+
+            if (isBuffering) {
+                isBuffering = false;
+                nextPlayTime = audioCtx.currentTime + 0.08;   // small initial safety margin
+            }
+
+            // Schedule the chunk smoothly
+            const source = audioCtx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioCtx.destination);
+
+            const playAt = Math.max(nextPlayTime, audioCtx.currentTime + 0.01);
+            source.start(playAt);
+
+            nextPlayTime = playAt + buffer.duration;
+
+            // Keep queue from growing too much
+            audioQueue.push({ source, playAt });
+            if (audioQueue.length > BUFFER_QUEUE_SIZE * 3) {
+                audioQueue.shift();
+            }
+        }
+
+        // Original playPCM kept for compatibility (now routes to queue)
+        function playPCM(pcmData) {
+            queuePCMChunk(pcmData);
+        }
+
+        /* ==================== Your original functions (unchanged) ==================== */
 
         function populateSelect(select) {
             select.innerHTML = '';
             const singleDropdown = document.querySelectorAll('.userSelect').length === 1;
             const selectedUsers = getSelectedUsers().filter(u => u !== select.value);
-
             usersData.forEach(user => {
                 if (user === 'BROADCAST' && !singleDropdown) return;
                 if (user !== 'BROADCAST' && selectedUsers.includes(user)) return;
@@ -164,7 +329,6 @@
                 option.text = user;
                 select.appendChild(option);
             });
-
             if ([...select.options].some(o => o.value === select.value)) {
                 select.value = select.value;
             }
@@ -185,7 +349,6 @@
             const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
             const container = document.getElementById('userContainer');
             if (container.children.length >= maxDropdowns) return;
-
             const newSelect = document.createElement('select');
             newSelect.className = 'userSelect';
             newSelect.onchange = updateAllDropdowns;
@@ -221,6 +384,32 @@
                 fetch('/play_file?users=' + encodeURIComponent(JSON.stringify(users)) + '&file=alarm.wav');
             }
         });
+
+        function showUserIndicator(user) {
+            if (activeIndicators[user]) {
+                clearTimeout(activeIndicators[user].timeout);
+                activeIndicators[user].timeout = setTimeout(() => removeIndicator(user), 1000);
+                return;
+            }
+            const indicator = document.createElement('div');
+            indicator.className = 'audio-indicator';
+            indicator.innerHTML = `<img src="/static/speaker.svg" alt="speaker"> <span>${user}</span>`;
+            audioIndicators.appendChild(indicator);
+            setTimeout(() => indicator.classList.add('show'), 10);
+            const timeout = setTimeout(() => removeIndicator(user), 1000);
+            activeIndicators[user] = { element: indicator, timeout };
+        }
+
+        function removeIndicator(user) {
+            const info = activeIndicators[user];
+            if (!info) return;
+            const indicator = info.element;
+            indicator.classList.remove('show');
+            setTimeout(() => {
+                if (indicator.parentNode) audioIndicators.removeChild(indicator);
+                delete activeIndicators[user];
+            }, 200);
+        }
     </script>
 </body>
 </html>

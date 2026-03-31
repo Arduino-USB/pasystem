@@ -1,9 +1,12 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, Response
 from remote_server import ConfigServer
 from mumbleman import MumbleMgr, PyAudioMgr
 import threading
+import queue
+import base64
 import time
 import ast
+import json
 import os
 
 # Remote server for device management
@@ -12,15 +15,14 @@ config_server = ConfigServer()
 # Server-side Mumble client (Username: Office)
 m = MumbleMgr("127.0.0.1", "Office", password="password")
 
-a_output = PyAudioMgr(output=True)
-a_output.open_stream()
+sound_queue = queue.Queue()
+
 
 def play_audio_callback(user, soundchunk):
-	try:
-		a_output.stream.write(soundchunk.pcm)
-	except:
-		pass
-		
+	# assuming soundchunk.pcm is bytes
+	encoded = base64.b64encode(soundchunk.pcm).decode("ascii")
+	sound_queue.put({"user": user["name"], "soundchunk": encoded})
+
 m.play_audio_callback = play_audio_callback
 
 
@@ -62,7 +64,23 @@ def usernames_to_session(usernames):
 	
 app = Flask(__name__)
 
+@app.route('/')
+def index():
+	return render_template('main.html')
 
+
+
+@app.route("/audio_stream")
+def audio_stream():
+    def generator():
+        while True:
+            item = sound_queue.get()  # blocks until data arrives
+            # Send JSON string per SSE
+            yield f"data: {json.dumps(item)}\n\n"
+
+    return Response(generator(), mimetype="text/event-stream")
+	
+	
 @app.route('/get_users')
 def get_users():
 	user_name = m.mumble.users.myself["name"]
@@ -74,10 +92,8 @@ def get_users():
 			
 	return {"users" : user_list}
 	
-@app.route('/')
-def index():
-	return render_template('main.html')
 
+	
 @app.route('/toggle_stream')
 def toggle_stream():
 	mode = request.args.get("mode")
