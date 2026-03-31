@@ -14,6 +14,7 @@
             font-family: sans-serif;
             background-color: #f0f0f0;
         }
+
         /* Topbar/navbar */
         .topbar {
             position: fixed;
@@ -42,6 +43,12 @@
             background-repeat: no-repeat;
             background-position: center;
         }
+        .topbar .settings-btn {
+            background-image: url('/static/settings.svg');
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
 
         /* Main content container */
         .cont {
@@ -53,6 +60,7 @@
         }
 
         .cont .p2t {
+            position: relative;
             width: 200px;
             height: 200px;
             border-radius: 50px;
@@ -61,13 +69,25 @@
             background-size: 50% 50%;
             background-repeat: no-repeat;
             background-position: center;
+            transition: background-color 0.1s;
         }
-        .cont .p2t:active {
+        .cont .p2t.active {
             background-color: rgba(1, 69, 115, 1);
+        }
+        .cont .p2t .key-label {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            font-size: 16px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 2px 6px;
+            border-radius: 5px;
         }
 
         /* Deafen Button - Now positioned UNDER PTT */
         .cont .deafen-btn {
+            position: relative;
             width: 90px;
             height: 90px;
             border-radius: 20px;
@@ -85,8 +105,19 @@
         .cont .deafen-btn:active {
             transform: scale(0.95);
         }
+        .cont .deafen-btn .key-label {
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            font-size: 14px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 1px 4px;
+            border-radius: 4px;
+        }
 
         .cont .emg {
+            position: relative;
             width: 100px;
             height: 100px;
             border-radius: 25px;
@@ -99,6 +130,16 @@
         }
         .cont .emg.active {
             background-color: rgba(0, 255, 0, 1);
+        }
+        .cont .emg .key-label {
+            position: absolute;
+            top: 3px;
+            right: 3px;
+            font-size: 14px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 1px 4px;
+            border-radius: 4px;
         }
 
         .cont .btn-row {
@@ -113,9 +154,20 @@
             background-color: rgba(250, 211, 54, 1);
             border: none;
             cursor: pointer;
+            position: relative;
         }
         .cont .btn-row .btn:active {
             background-color: rgba(171, 145, 41, 1);
+        }
+        .cont .btn-row .btn .key-label {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            font-size: 12px;
+            color: white;
+            background: rgba(0,0,0,0.5);
+            padding: 1px 4px;
+            border-radius: 4px;
         }
 
         /* Audio indicators */
@@ -177,12 +229,38 @@
             border-radius: 12px;
             cursor: pointer;
         }
+
+        /* Keybind Settings Popup */
+        #keybindPopup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #eee;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            display: none;
+            z-index: 10000;
+        }
+        #keybindPopup input {
+            width: 120px;
+            padding: 5px;
+            margin: 5px;
+            font-size: 16px;
+        }
+        #keybindPopup button {
+            padding: 5px 12px;
+            margin-top: 10px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <!-- Topbar/navbar -->
     <div class="topbar">
         <a class="home-btn" href="http://127.0.0.1:6122"></a>
+        <a class="settings-btn" onclick="openKeybindPopup()"></a>
     </div>
 
     <!-- Audio Unlock Overlay -->
@@ -194,6 +272,17 @@
         </div>
     </div>
 
+    <!-- Keybind Settings Popup -->
+    <div id="keybindPopup">
+        <h3>Keybind Settings</h3>
+        <label>Push-to-Talk: <input id="keyPTT"></label><br>
+        <label>Deafen: <input id="keyDeafen"></label><br>
+        <label>Alarm: <input id="keyAlarm"></label><br>
+        <label>Dropdown: <input id="keyDropdown"></label><br>
+        <button onclick="saveKeybinds()">Save</button>
+        <button onclick="closeKeybindPopup()">Cancel</button>
+    </div>
+
     <!-- Main content -->
     <div class="cont">
         <button
@@ -203,10 +292,12 @@
             onmousedown="toggleStream('on')"
             onmouseup="toggleStream('off')"
             onmouseleave="toggleStream('off')">
+            <div class="key-label" id="pttLabel">Space</div>
         </button>
 
         <!-- Deafen Button - Positioned directly under PTT -->
         <button class="deafen-btn" id="deafenBtn" onclick="toggleDeafen()">
+            <div class="key-label" id="deafenLabel">D</div>
         </button>
 
         <div class="drp" id="userContainer">
@@ -220,7 +311,9 @@
       
         <br>
       
-        <button class="emg" id="alarmBtn"></button>
+        <button class="emg" id="alarmBtn">
+            <div class="key-label" id="alarmLabel">A</div>
+        </button>
         
         <!-- Audio indicators -->
         <div class="audio-indicators" id="audioIndicators"></div>
@@ -241,6 +334,44 @@
         let isBuffering = true;
         let chunkCounter = 0;
 
+        // ----------------- Keybinds -----------------
+        let keybinds = {
+            PTT: "Space",
+            Deafen: "D",
+            Alarm: "A",
+            Dropdown: "U"
+        };
+
+        function loadKeybinds() {
+            const stored = localStorage.getItem('paKeybinds');
+            if (stored) keybinds = JSON.parse(stored);
+            updateKeyLabels();
+        }
+        function saveKeybinds() {
+            keybinds.PTT = document.getElementById('keyPTT').value || 'Space';
+            keybinds.Deafen = document.getElementById('keyDeafen').value || 'D';
+            keybinds.Alarm = document.getElementById('keyAlarm').value || 'A';
+            keybinds.Dropdown = document.getElementById('keyDropdown').value || 'U';
+            localStorage.setItem('paKeybinds', JSON.stringify(keybinds));
+            updateKeyLabels();
+            closeKeybindPopup();
+        }
+        function updateKeyLabels() {
+            document.getElementById('pttLabel').innerText = keybinds.PTT;
+            document.getElementById('deafenLabel').innerText = keybinds.Deafen;
+            document.getElementById('alarmLabel').innerText = keybinds.Alarm;
+        }
+        function openKeybindPopup() {
+            document.getElementById('keyPTT').value = keybinds.PTT;
+            document.getElementById('keyDeafen').value = keybinds.Deafen;
+            document.getElementById('keyAlarm').value = keybinds.Alarm;
+            document.getElementById('keyDropdown').value = keybinds.Dropdown;
+            document.getElementById('keybindPopup').style.display = 'block';
+        }
+        function closeKeybindPopup() {
+            document.getElementById('keybindPopup').style.display = 'none';
+        }
+
         window.onload = function() {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             
@@ -258,6 +389,8 @@
 
             // Initialize deafen button appearance
             updateDeafenButton();
+
+            loadKeybinds();
         };
 
         async function unlockAudio() {
@@ -448,6 +581,50 @@
                 delete activeIndicators[user];
             }, 200);
         }
+
+        // ==================== KEYBIND HANDLING ====================
+        const pttButton = document.querySelector('.p2t');
+
+        document.addEventListener('keydown', (e) => {
+            if (!audioUnlocked) return;
+            const key = e.key.toLowerCase();
+
+            // Push-to-talk
+            if (key === keybinds.PTT.trim().toLowerCase()) {
+                if (!pttButton.classList.contains('active')) {
+                    toggleStream('on');
+                    pttButton.classList.add('active');
+                }
+            }
+
+            // Other keybinds
+            if (key === keybinds.Deafen.trim().toLowerCase()) toggleDeafen();
+            if (key === keybinds.Alarm.trim().toLowerCase()) alarmBtn.click();
+            if (key === keybinds.Dropdown.trim().toLowerCase()) {
+                const numListener = (ev) => {
+                    if (ev.key >= '1' && ev.key <= '9') {
+                        const idx = parseInt(ev.key) - 1;
+                        const selects = document.querySelectorAll('.userSelect');
+                        if (idx < selects.length) {
+                            selects[idx].selectedIndex = 0;
+                            selects[idx].focus();
+                            updateAllDropdowns();
+                        }
+                        document.removeEventListener('keydown', numListener);
+                    }
+                };
+                document.addEventListener('keydown', numListener);
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (key === keybinds.PTT.trim().toLowerCase()) {
+                toggleStream('off');
+                pttButton.classList.remove('active');
+            }
+        });
+
     </script>
 </body>
 </html>
