@@ -42,6 +42,7 @@
             background-repeat: no-repeat;
             background-position: center;
         }
+
         /* Main content container */
         .cont {
             display: flex;
@@ -50,6 +51,41 @@
             align-items: center;
             margin-top: 70px;
         }
+
+        .cont .p2t {
+            width: 200px;
+            height: 200px;
+            border-radius: 50px;
+            background-color: rgba(0, 107, 179, 1);
+            background-image: url('/static/microphone.svg');
+            background-size: 50% 50%;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+        .cont .p2t:active {
+            background-color: rgba(1, 69, 115, 1);
+        }
+
+        /* Deafen Button - Now positioned UNDER PTT */
+        .cont .deafen-btn {
+            width: 90px;
+            height: 90px;
+            border-radius: 20px;
+            background-color: #e74c3c;           /* Default: deafened/red */
+            background-size: 60% 60%;
+            background-repeat: no-repeat;
+            background-position: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .cont .deafen-btn.undeafened {
+            background-color: rgba(0, 107, 179, 1);   /* Same blue as PTT when undeafened */
+        }
+        .cont .deafen-btn:active {
+            transform: scale(0.95);
+        }
+
         .cont .emg {
             width: 100px;
             height: 100px;
@@ -64,19 +100,7 @@
         .cont .emg.active {
             background-color: rgba(0, 255, 0, 1);
         }
-        .cont .p2t {
-            width: 200px;
-            height: 200px;
-            border-radius: 50px;
-            background-color: rgba(0, 107, 179, 1);
-            background-image: url('/static/microphone.svg');
-            background-size: 50% 50%;
-            background-repeat: no-repeat;
-            background-position: center;
-        }
-        .cont .p2t:active {
-            background-color: rgba(1, 69, 115, 1);
-        }
+
         .cont .btn-row {
             display: flex;
             flex-direction: row;
@@ -93,7 +117,8 @@
         .cont .btn-row .btn:active {
             background-color: rgba(171, 145, 41, 1);
         }
-        /* Audio indicators (horizontal) */
+
+        /* Audio indicators */
         .audio-indicators {
             display: flex;
             flex-direction: row;
@@ -124,10 +149,10 @@
         /* Audio Unlock Overlay */
         #audioUnlockOverlay {
             position: fixed;
-            top: 0;
+            top: 50px;
             left: 0;
             width: 100%;
-            height: 100%;
+            height: calc(100% - 50px);
             background: rgba(0, 0, 0, 0.85);
             display: flex;
             align-items: center;
@@ -179,18 +204,24 @@
             onmouseup="toggleStream('off')"
             onmouseleave="toggleStream('off')">
         </button>
+
+        <!-- Deafen Button - Positioned directly under PTT -->
+        <button class="deafen-btn" id="deafenBtn" onclick="toggleDeafen()">
+        </button>
+
         <div class="drp" id="userContainer">
             <select class="userSelect"></select>
         </div>
-       
+      
         <div class="btn-row">
             <button class="btn" id="addBtn" onclick="addUserDropdown()">[+]</button>
             <button class="btn" onclick="removeUserDropdown()">[-]</button>
         </div>
-       
+      
         <br>
-       
+      
         <button class="emg" id="alarmBtn"></button>
+        
         <!-- Audio indicators -->
         <div class="audio-indicators" id="audioIndicators"></div>
     </div>
@@ -199,21 +230,20 @@
         let usersData = [];
         let audioCtx;
         let audioUnlocked = false;
+        let isDeafened = false;
 
-        // ============== JITTER BUFFER (for smoother audio) ==============
+        // ============== JITTER BUFFER ==============
         const SAMPLE_RATE = 48000;
-        const BUFFER_QUEUE_SIZE = 8;      // Increase if still choppy (more latency)
-        const PRE_BUFFER_CHUNKS = 4;      // Chunks to wait before playing (reduces choppiness)
-
+        const BUFFER_QUEUE_SIZE = 8;
+        const PRE_BUFFER_CHUNKS = 4;
         let audioQueue = [];
         let nextPlayTime = 0;
         let isBuffering = true;
         let chunkCounter = 0;
 
         window.onload = function() {
-            // Create AudioContext early (still suspended)
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
+            
             fetch('/get_users')
                 .then(response => response.json())
                 .then(data => {
@@ -223,21 +253,20 @@
 
             startAudioStream();
 
-            // Unlock audio on first user gesture
             document.addEventListener('click', unlockAudio, { once: true });
             document.addEventListener('touchstart', unlockAudio, { once: true });
+
+            // Initialize deafen button appearance
+            updateDeafenButton();
         };
 
         async function unlockAudio() {
             if (audioUnlocked) return;
-
             try {
                 if (audioCtx.state === 'suspended') {
                     await audioCtx.resume();
-                    console.log('AudioContext resumed! State:', audioCtx.state);
                 }
                 audioUnlocked = true;
-
                 const overlay = document.getElementById('audioUnlockOverlay');
                 overlay.classList.add('hidden');
                 setTimeout(() => {
@@ -248,7 +277,7 @@
             }
         }
 
-        /* ---------- AUDIO STREAM HANDLER with buffering ---------- */
+        /* ---------- AUDIO STREAM with Deafen Support ---------- */
         const audioIndicators = document.getElementById('audioIndicators');
         const activeIndicators = {};
 
@@ -263,17 +292,18 @@
 
                 showUserIndicator(user);
 
+                if (isDeafened) return;   // Don't play audio when deafened
+
                 const raw = Uint8Array.from(atob(base64Chunk), c => c.charCodeAt(0));
-                queuePCMChunk(raw);        // ← Changed: now uses queue instead of direct play
+                queuePCMChunk(raw);
             };
         }
 
         function queuePCMChunk(pcmData) {
-            if (!audioCtx || audioCtx.state !== 'running') return;
+            if (!audioCtx || audioCtx.state !== 'running' || isDeafened) return;
 
             const buffer = audioCtx.createBuffer(1, pcmData.length / 2, SAMPLE_RATE);
             const channel = buffer.getChannelData(0);
-
             for (let i = 0; i < pcmData.length; i += 2) {
                 let sample = pcmData[i] | (pcmData[i + 1] << 8);
                 if (sample >= 0x8000) sample -= 0x10000;
@@ -281,42 +311,50 @@
             }
 
             chunkCounter++;
-
-            // Pre-buffering phase
             if (isBuffering && chunkCounter < PRE_BUFFER_CHUNKS) {
                 audioQueue.push({ buffer });
                 return;
             }
-
             if (isBuffering) {
                 isBuffering = false;
-                nextPlayTime = audioCtx.currentTime + 0.08;   // small initial safety margin
+                nextPlayTime = audioCtx.currentTime + 0.08;
             }
 
-            // Schedule the chunk smoothly
             const source = audioCtx.createBufferSource();
             source.buffer = buffer;
             source.connect(audioCtx.destination);
-
             const playAt = Math.max(nextPlayTime, audioCtx.currentTime + 0.01);
             source.start(playAt);
-
             nextPlayTime = playAt + buffer.duration;
 
-            // Keep queue from growing too much
             audioQueue.push({ source, playAt });
             if (audioQueue.length > BUFFER_QUEUE_SIZE * 3) {
                 audioQueue.shift();
             }
         }
 
-        // Original playPCM kept for compatibility (now routes to queue)
         function playPCM(pcmData) {
             queuePCMChunk(pcmData);
         }
 
-        /* ==================== Your original functions (unchanged) ==================== */
+        // ==================== DEAFEN FUNCTIONS ====================
+        function toggleDeafen() {
+            isDeafened = !isDeafened;
+            updateDeafenButton();
+        }
 
+        function updateDeafenButton() {
+            const btn = document.getElementById('deafenBtn');
+            if (isDeafened) {
+                btn.style.backgroundImage = "url('/static/deafened.svg')";
+                btn.classList.remove('undeafened');
+            } else {
+                btn.style.backgroundImage = "url('/static/undeafened.svg')";
+                btn.classList.add('undeafened');
+            }
+        }
+
+        /* ==================== Original Functions (unchanged) ==================== */
         function populateSelect(select) {
             select.innerHTML = '';
             const singleDropdown = document.querySelectorAll('.userSelect').length === 1;
