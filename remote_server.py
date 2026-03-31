@@ -8,12 +8,14 @@ import requests
 class ConfigServer:
 	def __init__(self):
 		
+		print("[remote_config_server] Staing remote config server")
+		
 		self.devices = []
 		
 		self.app = Flask(__name__, template_folder='templates', static_folder='static')
-		self.app.logger.disabled = True
-		log = logging.getLogger('werkzeug') 
-		log.disabled = True		
+		#self.app.logger.disabled = True
+		#log = logging.getLogger('werkzeug') 
+		#og.disabled = True		
 		@self.app.before_request
 		def handle_options():
 			if request.method == 'OPTIONS':
@@ -35,7 +37,7 @@ class ConfigServer:
 
 		threading.Thread(target=self.device_watchdog, daemon=True).start()
 
-		threading.Thread(target=self.app.run, kwargs={"host": "0.0.0.0", "port": 6122}, daemon=True).start()
+		threading.Thread(target=self.app.run, kwargs={"host": "0.0.0.0", "port": 6122 , "debug" : False, "use_reloader" : False}, daemon=True).start()
 
 	def setup_routes(self):
 		@self.app.route('/register')

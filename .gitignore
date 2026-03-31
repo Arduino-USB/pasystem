@@ -1,7 +1,9 @@
 ML/
 __pycache__/
 .env
+libopus/
 key
+alarm.wav
 config.json
 vnext_natives_win32_x64/
 ffmpeg.exe

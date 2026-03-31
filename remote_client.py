@@ -44,11 +44,11 @@ class RestartMgr:
 					self.m.host = host
 					self.m.password = password
 					self.m.whisper = whisper
-					self.m.room = room
-					self.m.restart(host=host, room=room, whisper=whisper, password=password)
+					self.m.nickname = room
+					self.m.restart()
 				else:
 					print("[config_watchdog] Config wiped, killing client")
-					self.m.close()
+					self.m.safe_disconnect()
 					
 
 

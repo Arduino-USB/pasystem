@@ -25,13 +25,13 @@ a_input.open_stream()
 a_output = PyAudioMgr(output=True)
 a_output.open_stream()
 
-def play_audio_callaback(user, soundchunk):
+def play_audio_callback(user, soundchunk):
 	try:
-		self.audiomgr.stream.write(soundchunk.pcm)
+		a_output.stream.write(soundchunk.pcm)
 	except:
 		pass
 
-m.play_audio_callaback = play_audio_callaback
+m.play_audio_callback = play_audio_callback
 
 m.start_ffmpeg_process()
 
@@ -62,7 +62,7 @@ def push_to_alarm():
         if current_state != last_state:
             if current_state:
                 print("[main] Alarm ON")
-                m.play_file("alarm.mp3")
+                m.play_file("alarm.wav")
             else:
                 print("[main] Alarm OFF")
                 m.playing_audio = False
@@ -111,4 +111,4 @@ except KeyboardInterrupt:
     print("Exiting...")
 
 finally:
-    m.close()
+    m.safe_disconnect()
