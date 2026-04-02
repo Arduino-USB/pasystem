@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, Response
 from remote_server import ConfigServer
 from mumbleman import MumbleMgr, PyAudioMgr
 import threading
+import numpy as np
 import queue
 import base64
 import time
@@ -92,7 +93,21 @@ def get_users():
 			
 	return {"users" : user_list}
 	
+@app.route('/talk', methods=['POST'])
+def talk():
+	users = ast.literal_eval(request.args.get("users", "[]"))
+	whisper_list = usernames_to_session(users)
+	pcm_data = request.data  # raw PCM 16-bit
 
+	if not whisper_list:
+		print("[talk] Removing Whisper")
+		m.mumble.sound_output.remove_whisper()
+	else:
+		print(f"[talk] Setiing whisper list to {whisper_list}")
+		m.mumble.sound_output.set_whisper(whisper_list)
+
+	m.play_raw_audio(pcm_data)
+	return '', 200
 	
 @app.route('/toggle_stream')
 def toggle_stream():

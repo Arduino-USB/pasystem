@@ -319,312 +319,335 @@
         <div class="audio-indicators" id="audioIndicators"></div>
     </div>
 
-    <script>
-        let usersData = [];
-        let audioCtx;
-        let audioUnlocked = false;
-        let isDeafened = false;
+<script>
+    // ==================== GLOBAL VARIABLES ====================
+    let usersData = [];
+    let audioCtx;
+    let audioUnlocked = false;
+    let isDeafened = false;
 
-        // ============== JITTER BUFFER ==============
-        const SAMPLE_RATE = 48000;
-        const BUFFER_QUEUE_SIZE = 8;
-        const PRE_BUFFER_CHUNKS = 4;
-        let audioQueue = [];
-        let nextPlayTime = 0;
-        let isBuffering = true;
-        let chunkCounter = 0;
+    // ==================== JITTER BUFFER ====================
+    const SAMPLE_RATE = 48000;
+    const BUFFER_QUEUE_SIZE = 8;
+    const PRE_BUFFER_CHUNKS = 4;
+    let audioQueue = [];
+    let nextPlayTime = 0;
+    let isBuffering = true;
+    let chunkCounter = 0;
 
-        // ----------------- Keybinds -----------------
-        let keybinds = {
-            PTT: "Space",
-            Deafen: "D",
-            Alarm: "A",
-            Dropdown: "U"
-        };
+    // ==================== KEYBINDS ====================
+    let keybinds = {
+        PTT: "Space",
+        Deafen: "D",
+        Alarm: "A",
+        Dropdown: "U"
+    };
 
-        function loadKeybinds() {
-            const stored = localStorage.getItem('paKeybinds');
-            if (stored) keybinds = JSON.parse(stored);
-            updateKeyLabels();
-        }
-        function saveKeybinds() {
-            keybinds.PTT = document.getElementById('keyPTT').value || 'Space';
-            keybinds.Deafen = document.getElementById('keyDeafen').value || 'D';
-            keybinds.Alarm = document.getElementById('keyAlarm').value || 'A';
-            keybinds.Dropdown = document.getElementById('keyDropdown').value || 'U';
-            localStorage.setItem('paKeybinds', JSON.stringify(keybinds));
-            updateKeyLabels();
-            closeKeybindPopup();
-        }
-        function updateKeyLabels() {
-            document.getElementById('pttLabel').innerText = keybinds.PTT;
-            document.getElementById('deafenLabel').innerText = keybinds.Deafen;
-            document.getElementById('alarmLabel').innerText = keybinds.Alarm;
-        }
-        function openKeybindPopup() {
-            document.getElementById('keyPTT').value = keybinds.PTT;
-            document.getElementById('keyDeafen').value = keybinds.Deafen;
-            document.getElementById('keyAlarm').value = keybinds.Alarm;
-            document.getElementById('keyDropdown').value = keybinds.Dropdown;
-            document.getElementById('keybindPopup').style.display = 'block';
-        }
-        function closeKeybindPopup() {
-            document.getElementById('keybindPopup').style.display = 'none';
-        }
+    // ==================== AUDIO INPUT ====================
+    let isTalking = false;
+    let micStream = null;
+    let processor = null;
+    let sourceNode = null;
 
-        window.onload = function() {
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            
-            fetch('/get_users')
-                .then(response => response.json())
-                .then(data => {
-                    usersData = data.users;
-                    updateAllDropdowns();
-                });
+    // ==================== ONLOAD ====================
+    window.onload = function() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-            startAudioStream();
-
-            document.addEventListener('click', unlockAudio, { once: true });
-            document.addEventListener('touchstart', unlockAudio, { once: true });
-
-            // Initialize deafen button appearance
-            updateDeafenButton();
-
-            loadKeybinds();
-        };
-
-        async function unlockAudio() {
-            if (audioUnlocked) return;
-            try {
-                if (audioCtx.state === 'suspended') {
-                    await audioCtx.resume();
-                }
-                audioUnlocked = true;
-                const overlay = document.getElementById('audioUnlockOverlay');
-                overlay.classList.add('hidden');
-                setTimeout(() => {
-                    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-                }, 800);
-            } catch (err) {
-                console.error("Failed to resume AudioContext:", err);
-            }
-        }
-
-        /* ---------- AUDIO STREAM with Deafen Support ---------- */
-        const audioIndicators = document.getElementById('audioIndicators');
-        const activeIndicators = {};
-
-        function startAudioStream() {
-            const evtSource = new EventSource("/audio_stream");
-            evtSource.onmessage = async (event) => {
-                if (!audioUnlocked) return;
-
-                const msg = JSON.parse(event.data);
-                const user = msg.user;
-                const base64Chunk = msg.soundchunk;
-
-                showUserIndicator(user);
-
-                if (isDeafened) return;   // Don't play audio when deafened
-
-                const raw = Uint8Array.from(atob(base64Chunk), c => c.charCodeAt(0));
-                queuePCMChunk(raw);
-            };
-        }
-
-        function queuePCMChunk(pcmData) {
-            if (!audioCtx || audioCtx.state !== 'running' || isDeafened) return;
-
-            const buffer = audioCtx.createBuffer(1, pcmData.length / 2, SAMPLE_RATE);
-            const channel = buffer.getChannelData(0);
-            for (let i = 0; i < pcmData.length; i += 2) {
-                let sample = pcmData[i] | (pcmData[i + 1] << 8);
-                if (sample >= 0x8000) sample -= 0x10000;
-                channel[i / 2] = sample / 32768;
-            }
-
-            chunkCounter++;
-            if (isBuffering && chunkCounter < PRE_BUFFER_CHUNKS) {
-                audioQueue.push({ buffer });
-                return;
-            }
-            if (isBuffering) {
-                isBuffering = false;
-                nextPlayTime = audioCtx.currentTime + 0.08;
-            }
-
-            const source = audioCtx.createBufferSource();
-            source.buffer = buffer;
-            source.connect(audioCtx.destination);
-            const playAt = Math.max(nextPlayTime, audioCtx.currentTime + 0.01);
-            source.start(playAt);
-            nextPlayTime = playAt + buffer.duration;
-
-            audioQueue.push({ source, playAt });
-            if (audioQueue.length > BUFFER_QUEUE_SIZE * 3) {
-                audioQueue.shift();
-            }
-        }
-
-        function playPCM(pcmData) {
-            queuePCMChunk(pcmData);
-        }
-
-        // ==================== DEAFEN FUNCTIONS ====================
-        function toggleDeafen() {
-            isDeafened = !isDeafened;
-            updateDeafenButton();
-        }
-
-        function updateDeafenButton() {
-            const btn = document.getElementById('deafenBtn');
-            if (isDeafened) {
-                btn.style.backgroundImage = "url('/static/deafened.svg')";
-                btn.classList.remove('undeafened');
-            } else {
-                btn.style.backgroundImage = "url('/static/undeafened.svg')";
-                btn.classList.add('undeafened');
-            }
-        }
-
-        /* ==================== Original Functions (unchanged) ==================== */
-        function populateSelect(select) {
-            select.innerHTML = '';
-            const singleDropdown = document.querySelectorAll('.userSelect').length === 1;
-            const selectedUsers = getSelectedUsers().filter(u => u !== select.value);
-            usersData.forEach(user => {
-                if (user === 'BROADCAST' && !singleDropdown) return;
-                if (user !== 'BROADCAST' && selectedUsers.includes(user)) return;
-                let option = document.createElement('option');
-                option.value = user;
-                option.text = user;
-                select.appendChild(option);
+        fetch('/get_users')
+            .then(resp => resp.json())
+            .then(data => {
+                usersData = data.users;
+                updateAllDropdowns();
             });
-            if ([...select.options].some(o => o.value === select.value)) {
-                select.value = select.value;
+
+        startAudioStream();
+
+        document.addEventListener('click', unlockAudio, { once: true });
+        document.addEventListener('touchstart', unlockAudio, { once: true });
+
+        updateDeafenButton();
+        loadKeybinds();
+    };
+
+    // ==================== AUDIO CONTEXT UNLOCK ====================
+    window.unlockAudio = async function() {
+        if (audioUnlocked) return;
+        try {
+            if (audioCtx.state === 'suspended') await audioCtx.resume();
+            audioUnlocked = true;
+            const overlay = document.getElementById('audioUnlockOverlay');
+            overlay.classList.add('hidden');
+            setTimeout(() => {
+                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+            }, 800);
+        } catch (err) {
+            console.error("Failed to resume AudioContext:", err);
+        }
+    };
+
+    // ==================== AUDIO STREAM ====================
+    const audioIndicators = document.getElementById('audioIndicators');
+    const activeIndicators = {};
+
+    function startAudioStream() {
+        const evtSource = new EventSource("/audio_stream");
+        evtSource.onmessage = (event) => {
+            if (!audioUnlocked) return;
+            const msg = JSON.parse(event.data);
+            const user = msg.user;
+            const base64Chunk = msg.soundchunk;
+
+            showUserIndicator(user);
+            if (isDeafened) return;
+
+            const raw = Uint8Array.from(atob(base64Chunk), c => c.charCodeAt(0));
+            queuePCMChunk(raw);
+        };
+    }
+
+    function queuePCMChunk(pcmData) {
+        if (!audioCtx || audioCtx.state !== 'running' || isDeafened) return;
+
+        const buffer = audioCtx.createBuffer(1, pcmData.length / 2, SAMPLE_RATE);
+        const channel = buffer.getChannelData(0);
+        for (let i = 0; i < pcmData.length; i += 2) {
+            let sample = pcmData[i] | (pcmData[i + 1] << 8);
+            if (sample >= 0x8000) sample -= 0x10000;
+            channel[i / 2] = sample / 32768;
+        }
+
+        chunkCounter++;
+        if (isBuffering && chunkCounter < PRE_BUFFER_CHUNKS) {
+            audioQueue.push({ buffer });
+            return;
+        }
+        if (isBuffering) {
+            isBuffering = false;
+            nextPlayTime = audioCtx.currentTime + 0.08;
+        }
+
+        const source = audioCtx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioCtx.destination);
+        const playAt = Math.max(nextPlayTime, audioCtx.currentTime + 0.01);
+        source.start(playAt);
+        nextPlayTime = playAt + buffer.duration;
+
+        audioQueue.push({ source, playAt });
+        if (audioQueue.length > BUFFER_QUEUE_SIZE * 3) {
+            audioQueue.shift();
+        }
+    }
+
+    // ==================== DEAFEN ====================
+    window.toggleDeafen = function() {
+        isDeafened = !isDeafened;
+        updateDeafenButton();
+    };
+
+    function updateDeafenButton() {
+        const btn = document.getElementById('deafenBtn');
+        if (!btn) return;
+        if (isDeafened) {
+            btn.style.backgroundImage = "url('/static/deafened.svg')";
+            btn.classList.remove('undeafened');
+        } else {
+            btn.style.backgroundImage = "url('/static/undeafened.svg')";
+            btn.classList.add('undeafened');
+        }
+    }
+
+    // ==================== PUSH TO TALK ====================
+    window.toggleStream = async function(mode) {
+        if (mode === 'on') {
+            if (isTalking) return;
+            isTalking = true;
+
+            try {
+                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
+
+                sourceNode = audioCtx.createMediaStreamSource(micStream);
+                processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+                sourceNode.connect(processor);
+                processor.connect(audioCtx.destination);
+
+                processor.onaudioprocess = (e) => {
+                    if (!isTalking || isDeafened) return;
+                    const input = e.inputBuffer.getChannelData(0);
+                    const pcm16 = new Int16Array(input.length);
+                    for (let i = 0; i < input.length; i++) {
+                        let s = Math.max(-1, Math.min(1, input[i]));
+                        pcm16[i] = s < 0 ? s * 32768 : s * 32767;
+                    }
+                    fetch('/talk?users=' + encodeURIComponent(JSON.stringify(getSelectedUsers())), {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/octet-stream' },
+						body: pcm16.buffer
+					});
+                };
+            } catch (err) {
+                console.error("Mic error:", err);
             }
-        }
 
-        function updateAllDropdowns() {
-            document.querySelectorAll('.userSelect').forEach(select => populateSelect(select));
-            updateAddButton();
+        } else {
+            isTalking = false;
+            if (processor) { processor.disconnect(); processor = null; }
+            if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
+            if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
         }
+    };
 
-        function updateAddButton() {
-            const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
-            const currentDropdowns = document.querySelectorAll('.userSelect').length;
-            document.getElementById('addBtn').disabled = currentDropdowns >= maxDropdowns;
+    // ==================== KEYBINDS ====================
+    const pttButton = document.querySelector('.p2t');
+    const alarmBtn = document.getElementById('alarmBtn');
+
+	document.addEventListener('keydown', (e) => {
+		if (!audioUnlocked) return;
+		const key = e.key.toLowerCase();
+
+		if (key === keybinds.PTT.trim().toLowerCase()) {
+			if (e.repeat) return; // <-- ignore repeats
+			if (!isTalking) toggleStream('on');
+			pttButton.classList.add('active');
+		}
+	});
+
+	document.addEventListener('keyup', (e) => {
+		if (e.key.toLowerCase() === keybinds.PTT.trim().toLowerCase()) {
+			toggleStream('off');
+			pttButton.classList.remove('active');
+		}
+	});
+
+    // ==================== USER DROPDOWNS ====================
+    function populateSelect(select) {
+        select.innerHTML = '';
+        const singleDropdown = document.querySelectorAll('.userSelect').length === 1;
+        const selectedUsers = getSelectedUsers().filter(u => u !== select.value);
+        usersData.forEach(user => {
+            if (user === 'BROADCAST' && !singleDropdown) return;
+            if (user !== 'BROADCAST' && selectedUsers.includes(user)) return;
+            let option = document.createElement('option');
+            option.value = user;
+            option.text = user;
+            select.appendChild(option);
+        });
+        if ([...select.options].some(o => o.value === select.value)) {
+            select.value = select.value;
         }
+    }
 
-        function addUserDropdown() {
-            const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
-            const container = document.getElementById('userContainer');
-            if (container.children.length >= maxDropdowns) return;
-            const newSelect = document.createElement('select');
-            newSelect.className = 'userSelect';
-            newSelect.onchange = updateAllDropdowns;
-            container.appendChild(newSelect);
+    function updateAllDropdowns() {
+        document.querySelectorAll('.userSelect').forEach(populateSelect);
+        updateAddButton();
+    }
+
+    function getSelectedUsers() {
+        return Array.from(document.querySelectorAll('.userSelect')).map(s => s.value);
+    }
+
+    function updateAddButton() {
+        const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
+        const currentDropdowns = document.querySelectorAll('.userSelect').length;
+        const addBtn = document.getElementById('addBtn');
+        if (addBtn) addBtn.disabled = currentDropdowns >= maxDropdowns;
+    }
+
+    function addUserDropdown() {
+        const container = document.getElementById('userContainer');
+        const maxDropdowns = usersData.filter(u => u !== 'BROADCAST').length;
+        if (container.children.length >= maxDropdowns) return;
+        const newSelect = document.createElement('select');
+        newSelect.className = 'userSelect';
+        newSelect.onchange = updateAllDropdowns;
+        container.appendChild(newSelect);
+        updateAllDropdowns();
+    }
+
+    function removeUserDropdown() {
+        const container = document.getElementById('userContainer');
+        if (container.children.length > 1) {
+            container.removeChild(container.lastChild);
             updateAllDropdowns();
         }
+    }
 
-        function removeUserDropdown() {
-            const container = document.getElementById('userContainer');
-            if (container.children.length > 1) {
-                container.removeChild(container.lastChild);
-                updateAllDropdowns();
-            }
+    // ==================== AUDIO INDICATORS ====================
+    function showUserIndicator(user) {
+        if (activeIndicators[user]) {
+            clearTimeout(activeIndicators[user].timeout);
+            activeIndicators[user].timeout = setTimeout(() => removeIndicator(user), 1000);
+            return;
         }
+        const indicator = document.createElement('div');
+        indicator.className = 'audio-indicator';
+        indicator.innerHTML = `<img src="/static/speaker.svg" alt="speaker"> <span>${user}</span>`;
+        audioIndicators.appendChild(indicator);
+        setTimeout(() => indicator.classList.add('show'), 10);
+        const timeout = setTimeout(() => removeIndicator(user), 1000);
+        activeIndicators[user] = { element: indicator, timeout };
+    }
 
-        function getSelectedUsers() {
-            return Array.from(document.querySelectorAll('.userSelect')).map(s => s.value);
+    function removeIndicator(user) {
+        const info = activeIndicators[user];
+        if (!info) return;
+        const indicator = info.element;
+        indicator.classList.remove('show');
+        setTimeout(() => {
+            if (indicator.parentNode) audioIndicators.removeChild(indicator);
+            delete activeIndicators[user];
+        }, 200);
+    }
+
+    // ==================== KEYBIND SAVE/LOAD ====================
+    function loadKeybinds() {
+        const stored = localStorage.getItem('paKeybinds');
+        if (stored) keybinds = JSON.parse(stored);
+        updateKeyLabels();
+    }
+
+    function saveKeybinds() {
+        keybinds.PTT = document.getElementById('keyPTT').value || 'Space';
+        keybinds.Deafen = document.getElementById('keyDeafen').value || 'D';
+        keybinds.Alarm = document.getElementById('keyAlarm').value || 'A';
+        keybinds.Dropdown = document.getElementById('keyDropdown').value || 'U';
+        localStorage.setItem('paKeybinds', JSON.stringify(keybinds));
+        updateKeyLabels();
+        closeKeybindPopup();
+    }
+
+    function updateKeyLabels() {
+        document.getElementById('pttLabel').innerText = keybinds.PTT;
+        document.getElementById('deafenLabel').innerText = keybinds.Deafen;
+        document.getElementById('alarmLabel').innerText = keybinds.Alarm;
+    }
+
+    function openKeybindPopup() {
+        document.getElementById('keyPTT').value = keybinds.PTT;
+        document.getElementById('keyDeafen').value = keybinds.Deafen;
+        document.getElementById('keyAlarm').value = keybinds.Alarm;
+        document.getElementById('keyDropdown').value = keybinds.Dropdown;
+        document.getElementById('keybindPopup').style.display = 'block';
+    }
+
+    function closeKeybindPopup() {
+        document.getElementById('keybindPopup').style.display = 'none';
+    }
+
+    // ==================== ALARM BUTTON ====================
+    alarmBtn.addEventListener('click', () => {
+        const users = getSelectedUsers();
+        if (alarmBtn.classList.contains('active')) {
+            alarmBtn.classList.remove('active');
+            fetch('/stop_playing_file?users=' + encodeURIComponent(JSON.stringify(users)));
+        } else {
+            alarmBtn.classList.add('active');
+            fetch('/play_file?users=' + encodeURIComponent(JSON.stringify(users)) + '&file=alarm.wav');
         }
+    });
 
-        function toggleStream(mode) {
-            const users = getSelectedUsers();
-            fetch('/toggle_stream?users=' + encodeURIComponent(JSON.stringify(users)) + '&mode=' + mode);
-        }
-
-        const alarmBtn = document.getElementById('alarmBtn');
-        alarmBtn.addEventListener('click', () => {
-            const users = getSelectedUsers();
-            if (alarmBtn.classList.contains('active')) {
-                alarmBtn.classList.remove('active');
-                fetch('/stop_playing_file?users=' + encodeURIComponent(JSON.stringify(users)));
-            } else {
-                alarmBtn.classList.add('active');
-                fetch('/play_file?users=' + encodeURIComponent(JSON.stringify(users)) + '&file=alarm.wav');
-            }
-        });
-
-        function showUserIndicator(user) {
-            if (activeIndicators[user]) {
-                clearTimeout(activeIndicators[user].timeout);
-                activeIndicators[user].timeout = setTimeout(() => removeIndicator(user), 1000);
-                return;
-            }
-            const indicator = document.createElement('div');
-            indicator.className = 'audio-indicator';
-            indicator.innerHTML = `<img src="/static/speaker.svg" alt="speaker"> <span>${user}</span>`;
-            audioIndicators.appendChild(indicator);
-            setTimeout(() => indicator.classList.add('show'), 10);
-            const timeout = setTimeout(() => removeIndicator(user), 1000);
-            activeIndicators[user] = { element: indicator, timeout };
-        }
-
-        function removeIndicator(user) {
-            const info = activeIndicators[user];
-            if (!info) return;
-            const indicator = info.element;
-            indicator.classList.remove('show');
-            setTimeout(() => {
-                if (indicator.parentNode) audioIndicators.removeChild(indicator);
-                delete activeIndicators[user];
-            }, 200);
-        }
-
-        // ==================== KEYBIND HANDLING ====================
-        const pttButton = document.querySelector('.p2t');
-
-        document.addEventListener('keydown', (e) => {
-            if (!audioUnlocked) return;
-            const key = e.key.toLowerCase();
-
-            // Push-to-talk
-            if (key === keybinds.PTT.trim().toLowerCase()) {
-                if (!pttButton.classList.contains('active')) {
-                    toggleStream('on');
-                    pttButton.classList.add('active');
-                }
-            }
-
-            // Other keybinds
-            if (key === keybinds.Deafen.trim().toLowerCase()) toggleDeafen();
-            if (key === keybinds.Alarm.trim().toLowerCase()) alarmBtn.click();
-            if (key === keybinds.Dropdown.trim().toLowerCase()) {
-                const numListener = (ev) => {
-                    if (ev.key >= '1' && ev.key <= '9') {
-                        const idx = parseInt(ev.key) - 1;
-                        const selects = document.querySelectorAll('.userSelect');
-                        if (idx < selects.length) {
-                            selects[idx].selectedIndex = 0;
-                            selects[idx].focus();
-                            updateAllDropdowns();
-                        }
-                        document.removeEventListener('keydown', numListener);
-                    }
-                };
-                document.addEventListener('keydown', numListener);
-            }
-        });
-
-        document.addEventListener('keyup', (e) => {
-            const key = e.key.toLowerCase();
-            if (key === keybinds.PTT.trim().toLowerCase()) {
-                toggleStream('off');
-                pttButton.classList.remove('active');
-            }
-        });
-
-    </script>
+</script>
 </body>
 </html>
