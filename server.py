@@ -31,23 +31,6 @@ m.play_audio_callback = play_audio_callback
 a = PyAudioMgr(input=True)
 a.open_stream()
 
-class ContinousPlayback(threading.Thread):
-	def __init__(self):
-		super().__init__()
-		self.playing = False
-		self.daemon = True
-		
-	def run(self):
-		while True:
-			if self.playing:
-				data = a.get_audio_chunk()
-				m.play_raw_audio(data)
-			else:
-				# Essential sleep to allow Flask to process requests
-				time.sleep(0.05)
-
-playback_thread = ContinousPlayback()
-playback_thread.start()
 def usernames_to_session(usernames):
 	user_list_full = list(dict(m.mumble.users.items()).values())
 
@@ -108,26 +91,6 @@ def talk():
 
 	m.play_raw_audio(pcm_data)
 	return '', 200
-	
-@app.route('/toggle_stream')
-def toggle_stream():
-	mode = request.args.get("mode")
-	users = ast.literal_eval(request.args.get("users"))
-	whisper_list = usernames_to_session(users)
-
-	if not whisper_list:
-		print("[play_file] Removing Whisper")
-		m.mumble.sound_output.remove_whisper()
-	else:
-		print(f"[play_file] Setiing whisper list to {whisper_list}")
-		m.mumble.sound_output.set_whisper(whisper_list)	
-
-	
-	if mode == "on":
-		playback_thread.playing = True
-	else:
-		playback_thread.playing = False
-	return "OK", 200
 	
 	
 @app.route('/play_file')
