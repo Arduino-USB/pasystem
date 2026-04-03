@@ -1,268 +1,221 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>PA System</title>
-    <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-start;
-            height: 100vh;
-            margin: 0;
-            padding-top: 10px;
-            font-family: sans-serif;
-            background-color: #f0f0f0;
-        }
+{% extends "base.html" %}
 
-        /* Topbar/navbar */
-        .topbar {
-            position: fixed;
-            top: 0;
-            right: 0;
-            width: 100%;
-            height: 50px;
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            background-color: #ddd;
-            padding: 0 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            z-index: 1000;
-        }
-        .topbar a {
-            width: 40px;
-            height: 40px;
-            display: block;
-            text-decoration: none;
-            margin-left: 10px;
-        }
-        .topbar .home-btn {
-            background-image: url('/static/wrench.svg');
-            background-size: contain;
-            background-repeat: no-repeat;
-            background-position: center;
-        }
-        .topbar .settings-btn {
-            background-image: url('/static/settings.svg');
-            background-size: contain;
-            background-repeat: no-repeat;
-            background-position: center;
-        }
+{% block title %}PA System{% endblock %}
 
-        /* Main content container */
-        .cont {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            align-items: center;
-            margin-top: 70px;
-        }
+{% block styles %}
+<style>
+    /* ====================== ALL YOUR ORIGINAL STYLES ====================== */
 
-        .cont .p2t {
-            position: relative;
-            width: 200px;
-            height: 200px;
-            border-radius: 50px;
-            background-color: rgba(0, 107, 179, 1);
-            background-image: url('/static/microphone.svg');
-            background-size: 50% 50%;
-            background-repeat: no-repeat;
-            background-position: center;
-            transition: background-color 0.1s;
-        }
-        .cont .p2t.active {
-            background-color: rgba(1, 69, 115, 1);
-        }
-        .cont .p2t .key-label {
-            position: absolute;
-            top: 5px;
-            right: 5px;
-            font-size: 16px;
-            color: white;
-            background: rgba(0,0,0,0.5);
-            padding: 2px 6px;
-            border-radius: 5px;
-        }
+    .cont {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        align-items: center;
+        width: 100%;
+        max-width: 300px;
+    }
 
-        /* Deafen Button - Now positioned UNDER PTT */
-        .cont .deafen-btn {
-            position: relative;
-            width: 90px;
-            height: 90px;
-            border-radius: 20px;
-            background-color: #e74c3c;           /* Default: deafened/red */
-            background-size: 60% 60%;
-            background-repeat: no-repeat;
-            background-position: center;
-            border: none;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .cont .deafen-btn.undeafened {
-            background-color: rgba(0, 107, 179, 1);   /* Same blue as PTT when undeafened */
-        }
-        .cont .deafen-btn:active {
-            transform: scale(0.95);
-        }
-        .cont .deafen-btn .key-label {
-            position: absolute;
-            top: 3px;
-            right: 3px;
-            font-size: 14px;
-            color: white;
-            background: rgba(0,0,0,0.5);
-            padding: 1px 4px;
-            border-radius: 4px;
-        }
+    .cont .p2t {
+        position: relative;
+        width: 200px;
+        height: 200px;
+        border-radius: 50px;
+        background-color: rgba(0, 107, 179, 1);
+        background-image: url('/static/microphone.svg');
+        background-size: 50% 50%;
+        background-repeat: no-repeat;
+        background-position: center;
+        transition: background-color 0.1s;
+    }
+    .cont .p2t.active {
+        background-color: rgba(1, 69, 115, 1);
+    }
+    .cont .p2t .key-label {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        font-size: 16px;
+        color: white;
+        background: rgba(0,0,0,0.5);
+        padding: 2px 6px;
+        border-radius: 5px;
+    }
 
-        .cont .emg {
-            position: relative;
-            width: 100px;
-            height: 100px;
-            border-radius: 25px;
-            background-color: rgba(255, 0 , 0, 1);
-            background-image: url('/static/bell.svg');
-            background-size: 50% 50%;
-            background-repeat: no-repeat;
-            background-position: center;
-            transition: background-color 0.2s;
-        }
-        .cont .emg.active {
-            background-color: rgba(0, 255, 0, 1);
-        }
-        .cont .emg .key-label {
-            position: absolute;
-            top: 3px;
-            right: 3px;
-            font-size: 14px;
-            color: white;
-            background: rgba(0,0,0,0.5);
-            padding: 1px 4px;
-            border-radius: 4px;
-        }
+    /* Deafen Button */
+    .cont .deafen-btn {
+        position: relative;
+        width: 90px;
+        height: 90px;
+        border-radius: 20px;
+        background-color: #e74c3c;
+        background-size: 60% 60%;
+        background-repeat: no-repeat;
+        background-position: center;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .cont .deafen-btn.undeafened {
+        background-color: rgba(0, 107, 179, 1);
+    }
+    .cont .deafen-btn:active {
+        transform: scale(0.95);
+    }
+    .cont .deafen-btn .key-label {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        font-size: 14px;
+        color: white;
+        background: rgba(0,0,0,0.5);
+        padding: 1px 4px;
+        border-radius: 4px;
+    }
 
-        .cont .btn-row {
-            display: flex;
-            flex-direction: row;
-            gap: 10px;
-        }
-        .cont .btn-row .btn {
-            border-radius: 12.5px;
-            width: 50px;
-            height: 50px;
-            background-color: rgba(250, 211, 54, 1);
-            border: none;
-            cursor: pointer;
-            position: relative;
-        }
-        .cont .btn-row .btn:active {
-            background-color: rgba(171, 145, 41, 1);
-        }
-        .cont .btn-row .btn .key-label {
-            position: absolute;
-            top: 2px;
-            right: 2px;
-            font-size: 12px;
-            color: white;
-            background: rgba(0,0,0,0.5);
-            padding: 1px 4px;
-            border-radius: 4px;
-        }
+    /* EMG / Alarm Button */
+    .cont .emg {
+        position: relative;
+        width: 100px;
+        height: 100px;
+        border-radius: 25px;
+        background-color: rgba(255, 0, 0, 1);
+        background-image: url('/static/bell.svg');
+        background-size: 50% 50%;
+        background-repeat: no-repeat;
+        background-position: center;
+        transition: background-color 0.2s;
+    }
+    .cont .emg.active {
+        background-color: rgba(0, 255, 0, 1);
+    }
+    .cont .emg .key-label {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        font-size: 14px;
+        color: white;
+        background: rgba(0,0,0,0.5);
+        padding: 1px 4px;
+        border-radius: 4px;
+    }
 
-        /* Audio indicators */
-        .audio-indicators {
-            display: flex;
-            flex-direction: row;
-            gap: 10px;
-            margin-top: 20px;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-        .audio-indicator {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            background: rgba(255,255,255,0.8);
-            padding: 5px 10px;
-            border-radius: 10px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-        .audio-indicator.show {
-            opacity: 1;
-        }
-        .audio-indicator img {
-            width: 20px;
-            height: 20px;
-        }
+    /* Small buttons row */
+    .cont .btn-row {
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+    }
+    .cont .btn-row .btn {
+        border-radius: 12.5px;
+        width: 50px;
+        height: 50px;
+        background-color: rgba(250, 211, 54, 1);
+        border: none;
+        cursor: pointer;
+        position: relative;
+    }
+    .cont .btn-row .btn:active {
+        background-color: rgba(171, 145, 41, 1);
+    }
+    .cont .btn-row .btn .key-label {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        font-size: 12px;
+        color: white;
+        background: rgba(0,0,0,0.5);
+        padding: 1px 4px;
+        border-radius: 4px;
+    }
 
-        /* Audio Unlock Overlay */
-        #audioUnlockOverlay {
-            position: fixed;
-            top: 50px;
-            left: 0;
-            width: 100%;
-            height: calc(100% - 50px);
-            background: rgba(0, 0, 0, 0.85);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            color: white;
-            font-size: 24px;
-            text-align: center;
-            transition: opacity 0.6s ease;
-        }
-        #audioUnlockOverlay.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-        #audioUnlockOverlay button {
-            margin-top: 20px;
-            padding: 15px 40px;
-            font-size: 20px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 12px;
-            cursor: pointer;
-        }
+    /* Audio indicators */
+    .audio-indicators {
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+        margin-top: 20px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+    .audio-indicator {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(255,255,255,0.8);
+        padding: 5px 10px;
+        border-radius: 10px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    .audio-indicator.show {
+        opacity: 1;
+    }
+    .audio-indicator img {
+        width: 20px;
+        height: 20px;
+    }
 
-        /* Keybind Settings Popup */
-        #keybindPopup {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: #eee;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            display: none;
-            z-index: 10000;
-        }
-        #keybindPopup input {
-            width: 120px;
-            padding: 5px;
-            margin: 5px;
-            font-size: 16px;
-        }
-        #keybindPopup button {
-            padding: 5px 12px;
-            margin-top: 10px;
-            cursor: pointer;
-        }
-    </style>
-</head>
-<body>
-    <!-- Topbar/navbar -->
-    <div class="topbar">
-        <a class="home-btn" href="http://127.0.0.1:6122"></a>
-        <a class="settings-btn" onclick="openKeybindPopup()"></a>
-    </div>
+    /* Audio Unlock Overlay */
+    #audioUnlockOverlay {
+        position: fixed;
+        top: 50px;
+        left: 0;
+        width: 100%;
+        height: calc(100% - 50px);
+        background: rgba(0, 0, 0, 0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+        color: white;
+        font-size: 24px;
+        text-align: center;
+        transition: opacity 0.6s ease;
+    }
+    #audioUnlockOverlay.hidden {
+        opacity: 0;
+        pointer-events: none;
+    }
+    #audioUnlockOverlay button {
+        margin-top: 20px;
+        padding: 15px 40px;
+        font-size: 20px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 12px;
+        cursor: pointer;
+    }
 
+    /* Keybind Popup */
+    #keybindPopup {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: #eee;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        display: none;
+        z-index: 10000;
+    }
+    #keybindPopup input {
+        width: 120px;
+        padding: 5px;
+        margin: 5px;
+        font-size: 16px;
+    }
+    #keybindPopup button {
+        padding: 5px 12px;
+        margin-top: 10px;
+        cursor: pointer;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
     <!-- Audio Unlock Overlay -->
     <div id="audioUnlockOverlay">
         <div>
@@ -273,42 +226,38 @@
     </div>
 
     <!-- Keybind Settings Popup -->
-	<div id="keybindPopup" style="display: none;">
-		<h3>Keybind Settings</h3>
-		<p><strong>Click on a field, then press the key you want.</strong></p>
-		
-		<label>Push-to-Talk: 
-			<input id="keyPTT" readonly placeholder="Click and press key">
-		</label><br><br>
-		
-		<label>Deafen: 
-			<input id="keyDeafen" readonly placeholder="Click and press key">
-		</label><br><br>
-		
-		<label>Alarm: 
-			<input id="keyAlarm" readonly placeholder="Click and press key">
-		</label><br><br>
-		
-		<label>Dropdown: 
-			<input id="keyDropdown" readonly placeholder="Click and press key">
-		</label><br><br>
+    <div id="keybindPopup" style="display: none;">
+        <h3>Keybind Settings</h3>
+        <p><strong>Click on a field, then press the key you want.</strong></p>
+        <label>Push-to-Talk:<br><input id="keyPTT" readonly placeholder="Click and press key"></label><br><br>
+        <label>Deafen:<br><input id="keyDeafen" readonly placeholder="Click and press key"></label><br><br>
+        <label>Alarm:<br><input id="keyAlarm" readonly placeholder="Click and press key"></label><br><br>
+        <label>Dropdown:<br><input id="keyDropdown" readonly placeholder="Click and press key"></label><br><br>
+        <button onclick="saveKeybinds()">Save</button>
+        <button onclick="closeKeybindPopup()">Cancel</button>
+    </div>
 
-		<button onclick="saveKeybinds()">Save</button>
-		<button onclick="closeKeybindPopup()">Cancel</button>
-	</div>
-    <!-- Main content -->
+	<!-- Settings Button (moved here, under the topbar) -->
+    <a class="settings-btn" onclick="openKeybindPopup()" 
+       style="position: absolute; top: 65px; right: 15px; 
+              width: 40px; height: 40px; 
+              background-image: url('/static/settings.svg'); 
+              background-size: contain; 
+              background-repeat: no-repeat; 
+              background-position: center; 
+              z-index: 10;">
+    </a>
+    <!-- Main Controls -->
     <div class="cont">
-        <button
-            class="p2t"
-            ontouchstart="toggleStream('on')"
-            ontouchend="toggleStream('off')"
-            onmousedown="toggleStream('on')"
-            onmouseup="toggleStream('off')"
-            onmouseleave="toggleStream('off')">
+        <button class="p2t"
+                ontouchstart="toggleStream('on')"
+                ontouchend="toggleStream('off')"
+                onmousedown="toggleStream('on')"
+                onmouseup="toggleStream('off')"
+                onmouseleave="toggleStream('off')">
             <div class="key-label" id="pttLabel">Space</div>
         </button>
 
-        <!-- Deafen Button - Positioned directly under PTT -->
         <button class="deafen-btn" id="deafenBtn" onclick="toggleDeafen()">
             <div class="key-label" id="deafenLabel">D</div>
         </button>
@@ -316,22 +265,22 @@
         <div class="drp" id="userContainer">
             <select class="userSelect"></select>
         </div>
-      
+     
         <div class="btn-row">
             <button class="btn" id="addBtn" onclick="addUserDropdown()">[+]</button>
             <button class="btn" onclick="removeUserDropdown()">[-]</button>
         </div>
-      
+     
         <br>
-      
+     
         <button class="emg" id="alarmBtn">
             <div class="key-label" id="alarmLabel">A</div>
         </button>
-        
-        <!-- Audio indicators -->
+       
         <div class="audio-indicators" id="audioIndicators"></div>
     </div>
-
+{% endblock %}
+{% block scripts %}
 <script>
     // ==================== GLOBAL VARIABLES ====================
     let usersData = [];
@@ -382,7 +331,7 @@
 
         updateDeafenButton();
         loadKeybinds();
-		setupKeyCapture();
+	setupKeyCapture();
     };
 
     // ==================== AUDIO CONTEXT UNLOCK ====================
@@ -784,5 +733,4 @@
     });
 
 </script>
-</body>
-</html>
+{% endblock %}

@@ -1,278 +1,250 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Device Manager</title>
+{% extends "base.html" %}
 
-    <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: flex-start;
-            height: 100vh;
-            margin: 0;
-            padding-top: 10px;
-            font-family: sans-serif;
-            background-color: #f0f0f0;
-        }
+{% block title %}Device Manager{% endblock %}
 
-        .topbar {
-            position: fixed;
-            top: 0;
-            right: 0;
-            width: 100%;
-            height: 50px;
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            background-color: #ddd;
-            padding: 0 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            z-index: 1000;
-        }
+{% block styles %}
+<style>
+    .main-content {
+        padding: 20px 10px;
+    }
 
-        .topbar a {
-            width: 40px;
-            height: 40px;
-            display: block;
-            text-decoration: none;
-            margin-left: 10px;
-        }
+    .content {
+        width: 90%;
+        max-width: 600px;
+    }
 
-        .topbar .home-btn {
-            background-image: url('/static/home.svg');
-            background-size: contain;
-            background-repeat: no-repeat;
-            background-position: center;
-        }
+    h1 {
+        text-align: center;
+        margin-bottom: 20px;
+    }
 
-        .content {
-            margin-top: 70px;
-            width: 90%;
-            max-width: 600px;
-        }
+    ul {
+        list-style: none;
+        padding: 0;
+    }
 
-        ul {
-            list-style: none;
-            padding: 0;
-        }
+    li {
+        background: white;
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
 
-        li {
-            background: white;
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
+    button {
+        margin-left: 5px;
+        cursor: pointer;
+        background-color: rgba(0, 107, 179, 1);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 6px 12px;
+        transition: background-color 0.2s;
+    }
 
-        button {
-            margin-left: 5px;
-            cursor: pointer;
-            background-color: rgba(0, 107, 179, 1);
-            color: white;
-            border: none;
-            border-radius: 12px;
-            padding: 6px 12px;
-            transition: background-color 0.2s;
-        }
+    button:hover {
+        background-color: rgba(1, 69, 115, 1);
+    }
 
-        button:hover {
-            background-color: rgba(1, 69, 115, 1);
-        }
+    button:active {
+        background-color: rgba(0, 50, 90, 1);
+    }
 
-        button:active {
-            background-color: rgba(0, 50, 90, 1);
-        }
-    </style>
-</head>
+    .config-editor {
+        margin-top: 10px;
+        padding: 10px;
+        background: #f9f9f9;
+        border-radius: 8px;
+    }
 
-<body>
+    .config-editor label {
+        display: block;
+        margin: 8px 0 4px;
+    }
 
-<div class="topbar">
-    <a class="home-btn" href="http://127.0.0.1:5000"></a>
-</div>
+    .config-editor input[type="text"] {
+        width: 100%;
+        padding: 6px;
+        margin-bottom: 8px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+    }
+</style>
+{% endblock %}
 
-<div class="content">
-    <h1>Device Manager</h1>
-    <ul id="device-list"></ul>
-</div>
+{% block content %}
+    <div class="content">
+        <h1>Device Manager</h1>
+        <ul id="device-list"></ul>
+    </div>
 
-<template id="device-template">
-    <li>
-        <div>
-            <strong>IP:</strong> <span class="ip"></span>
-            | <strong>Room:</strong> <span class="room-label"></span>
-            <button class="edit-btn">Edit</button>
-            <button class="wipe-btn">Wipe</button>
-        </div>
-        <div class="config-editor" style="display:none; margin-left:20px;">
-            <label>
-                Room: <input type="text" class="room">
-            </label><br>
-            <label>
-                Host: <input type="text" class="host">
-            </label>
-            <label>
-                <input type="checkbox" class="edit-host"> I know what I’m doing!
-            </label><br>
-            <label>
-                Whisper: <input type="text" class="whisper">
-            </label><br>
-            <label>
-                Password: <input type="text" class="password">
-            </label><br>
-            <button class="save-btn">Save</button>
-            <button class="cancel-btn">Cancel</button>
-        </div>
-    </li>
-</template>
+    <template id="device-template">
+        <li>
+            <div>
+                <strong>IP:</strong> <span class="ip"></span>
+                | <strong>Room:</strong> <span class="room-label"></span>
+                <button class="edit-btn">Edit</button>
+                <button class="wipe-btn">Wipe</button>
+            </div>
+            <div class="config-editor" style="display:none; margin-left:20px;">
+                <label>
+                    Room: <input type="text" class="room">
+                </label><br>
+                <label>
+                    Host: <input type="text" class="host">
+                </label>
+                <label>
+                    <input type="checkbox" class="edit-host"> I know what I’m doing!
+                </label><br>
+                <label>
+                    Whisper: <input type="text" class="whisper">
+                </label><br>
+                <label>
+                    Password: <input type="text" class="password">
+                </label><br>
+                <button class="save-btn">Save</button>
+                <button class="cancel-btn">Cancel</button>
+            </div>
+        </li>
+    </template>
+{% endblock %}
 
+{% block scripts %}
 <script>
-const openEditors = new Set();
-const deviceMap = new Map();
+    const openEditors = new Set();
+    const deviceMap = new Map();
+    let localIP = '';
 
-let localIP = '';
-
-async function fetchLocalIP() {
-    try {
-        const res = await fetch('/get_local_ip');
-        return (await res.text()).trim();
-    } catch {
-        return '';
-    }
-}
-
-async function fetchDevices() {
-    try {
-        const res = await fetch('/get_devices');
-        const devices = await res.json();
-
-        if (!localIP) {
-            localIP = await fetchLocalIP();
-        }
-
-        renderDevices(devices);
-    } catch (e) {
-        console.error("Failed to fetch devices:", e);
-    }
-}
-
-async function renderDevices(devices) {
-    const list = document.getElementById('device-list');
-    const newIPs = new Set();
-
-    for (const device of devices) {
-        newIPs.add(device.ip);
-
-        let li = deviceMap.get(device.ip);
-
-        // 🔥 Fetch config from device
-        let config = null;
+    async function fetchLocalIP() {
         try {
-            const res = await fetch(`http://${device.ip}:6123/get_config`);
-            config = await res.json();
+            const res = await fetch('/get_local_ip');
+            return (await res.text()).trim();
         } catch {
-            config = null;
+            return '';
         }
+    }
 
-        const roomName = config?.room || 'None';
+    async function fetchDevices() {
+        try {
+            const res = await fetch('/get_devices');
+            const devices = await res.json();
+            if (!localIP) {
+                localIP = await fetchLocalIP();
+            }
+            renderDevices(devices);
+        } catch (e) {
+            console.error("Failed to fetch devices:", e);
+        }
+    }
 
-        if (!li) {
-            const template = document.getElementById('device-template');
-            const clone = template.content.cloneNode(true);
-            li = clone.querySelector('li');
-            list.appendChild(li);
-            deviceMap.set(device.ip, li);
+    async function renderDevices(devices) {
+        const list = document.getElementById('device-list');
+        const newIPs = new Set();
 
-            const ipSpan = li.querySelector('.ip');
-            const roomLabel = li.querySelector('.room-label');
-            const editBtn = li.querySelector('.edit-btn');
-            const wipeBtn = li.querySelector('.wipe-btn');
-            const editor = li.querySelector('.config-editor');
+        for (const device of devices) {
+            newIPs.add(device.ip);
+            let li = deviceMap.get(device.ip);
 
-            const roomInput = li.querySelector('.room');
-            const hostInput = li.querySelector('.host');
-            const whisperInput = li.querySelector('.whisper');
-            const passwordInput = li.querySelector('.password');
+            // Fetch config from device
+            let config = null;
+            try {
+                const res = await fetch(`http://${device.ip}:6123/get_config`);
+                config = await res.json();
+            } catch {
+                config = null;
+            }
 
-            const saveBtn = li.querySelector('.save-btn');
-            const cancelBtn = li.querySelector('.cancel-btn');
-            const editHostCheckbox = li.querySelector('.edit-host');
+            const roomName = config?.room || 'None';
 
-            ipSpan.textContent = device.ip;
-            roomLabel.textContent = roomName;
+            if (!li) {
+                const template = document.getElementById('device-template');
+                const clone = template.content.cloneNode(true);
+                li = clone.querySelector('li');
+                list.appendChild(li);
+                deviceMap.set(device.ip, li);
 
-            editBtn.addEventListener('click', () => {
-                editor.style.display = 'block';
-                openEditors.add(device.ip);
+                const ipSpan = li.querySelector('.ip');
+                const roomLabel = li.querySelector('.room-label');
+                const editBtn = li.querySelector('.edit-btn');
+                const wipeBtn = li.querySelector('.wipe-btn');
+                const editor = li.querySelector('.config-editor');
+                const roomInput = li.querySelector('.room');
+                const hostInput = li.querySelector('.host');
+                const whisperInput = li.querySelector('.whisper');
+                const passwordInput = li.querySelector('.password');
+                const saveBtn = li.querySelector('.save-btn');
+                const cancelBtn = li.querySelector('.cancel-btn');
+                const editHostCheckbox = li.querySelector('.edit-host');
 
-                roomInput.value = config?.room || '';
-                hostInput.value = localIP; // ALWAYS local IP
-                whisperInput.value = config?.whisper || '';
-                passwordInput.value = config?.password || '';
+                ipSpan.textContent = device.ip;
+                roomLabel.textContent = roomName;
 
-                hostInput.disabled = true;
-                editHostCheckbox.checked = false;
-            });
+                editBtn.addEventListener('click', () => {
+                    editor.style.display = 'block';
+                    openEditors.add(device.ip);
+                    roomInput.value = config?.room || '';
+                    hostInput.value = localIP;
+                    whisperInput.value = config?.whisper || '';
+                    passwordInput.value = config?.password || '';
+                    hostInput.disabled = true;
+                    editHostCheckbox.checked = false;
+                });
 
-            cancelBtn.addEventListener('click', () => {
-                editor.style.display = 'none';
-                openEditors.delete(device.ip);
-            });
-
-            editHostCheckbox.addEventListener('change', () => {
-                hostInput.disabled = !editHostCheckbox.checked;
-            });
-
-            wipeBtn.addEventListener('click', async () => {
-                try {
-                    await fetch(`http://${device.ip}:6123/wipe_config`, { method: 'POST' });
-                    alert(`Config wiped for ${device.ip}`);
-                } catch (e) {
-                    alert(`Failed to wipe ${device.ip}`);
-                }
-            });
-
-            saveBtn.addEventListener('click', async () => {
-                const configToSend = {
-                    room: roomInput.value || null,
-                    host: hostInput.value || null,
-                    whisper: whisperInput.value || null,
-                    password: passwordInput.value || "" // NEVER null, that crashes mumble
-                };
-
-                try {
-                    await fetch(`http://${device.ip}:6123/set_config`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(configToSend)
-                    });
-
-                    alert(`Config saved for ${device.ip}`);
+                cancelBtn.addEventListener('click', () => {
                     editor.style.display = 'none';
                     openEditors.delete(device.ip);
-                } catch (e) {
-                    alert(`Failed to save config for ${device.ip}`);
-                }
-            });
+                });
 
-        } else {
-            li.querySelector('.room-label').textContent = roomName;
+                editHostCheckbox.addEventListener('change', () => {
+                    hostInput.disabled = !editHostCheckbox.checked;
+                });
+
+                wipeBtn.addEventListener('click', async () => {
+                    try {
+                        await fetch(`http://${device.ip}:6123/wipe_config`, { method: 'POST' });
+                        alert(`Config wiped for ${device.ip}`);
+                    } catch (e) {
+                        alert(`Failed to wipe ${device.ip}`);
+                    }
+                });
+
+                saveBtn.addEventListener('click', async () => {
+                    const configToSend = {
+                        room: roomInput.value || null,
+                        host: hostInput.value || null,
+                        whisper: whisperInput.value || null,
+                        password: passwordInput.value || ""
+                    };
+
+                    try {
+                        await fetch(`http://${device.ip}:6123/set_config`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(configToSend)
+                        });
+                        alert(`Config saved for ${device.ip}`);
+                        editor.style.display = 'none';
+                        openEditors.delete(device.ip);
+                    } catch (e) {
+                        alert(`Failed to save config for ${device.ip}`);
+                    }
+                });
+            } else {
+                li.querySelector('.room-label').textContent = roomName;
+            }
+        }
+
+        // Remove devices that no longer exist (unless editor is open)
+        for (const [ip, li] of deviceMap.entries()) {
+            if (!newIPs.has(ip) && !openEditors.has(ip)) {
+                li.remove();
+                deviceMap.delete(ip);
+            }
         }
     }
 
-    for (const [ip, li] of deviceMap.entries()) {
-        if (!newIPs.has(ip) && !openEditors.has(ip)) {
-            li.remove();
-            deviceMap.delete(ip);
-        }
-    }
-}
-
-setInterval(fetchDevices, 10000);
-fetchDevices();
+    // Initial load + polling
+    setInterval(fetchDevices, 10000);
+    fetchDevices();
 </script>
-
-</body>
-</html>
+{% endblock %}

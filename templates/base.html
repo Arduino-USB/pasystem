@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}PA System{% endblock %}</title>
+   
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 99vw;
+            height: 50px;
+            background-color: #ddd;
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 0 15px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 1000;
+        }
+
+        .topbar a {
+            width: 40px;
+            height: 40px;
+            display: block;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            margin-left: 12px;
+            text-decoration: none;
+        }
+
+        .topbar .conf-btn   { background-image: url('/static/wrench.svg'); }
+		.topbar .home-btn   { background-image: url('/static/home.svg'); }
+
+        .main-content {
+            margin-top: 50px;
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            padding: 10px 10px 20px;
+            overflow-y: auto;
+        }
+    </style>
+
+    {% block styles %}{% endblock %}
+</head>
+<body>
+    <!-- Topbar -->
+    <div class="topbar">
+        <a class="conf-btn" href="http://127.0.0.1:6122"></a>
+		<a class="home-btn" href="http://127.0.0.1:5000"></a>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        {% block content %}{% endblock %}
+    </div>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>
