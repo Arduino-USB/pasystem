@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, Response
 from remote_server import ConfigServer
 from mumbleman import MumbleMgr, PyAudioMgr
 import threading
-import numpy as np
 import queue
 import base64
 import time

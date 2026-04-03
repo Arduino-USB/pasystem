@@ -499,28 +499,103 @@
         }
     };
 
-    // ==================== KEYBINDS ====================
-    const pttButton = document.querySelector('.p2t');
-    const alarmBtn = document.getElementById('alarmBtn');
+	// ==================== KEYBINDS ====================
+	const pttButton = document.querySelector('.p2t');
+	const alarmBtn = document.getElementById('alarmBtn');
+	let isPTTHeld = false;
+
+	function keyMatches(pressedKey, boundKey) {
+		if (!pressedKey || !boundKey) return false;
+		
+		const pressed = String(pressedKey).trim();
+		const bound = String(boundKey).trim();
+		
+		console.log(`[Keybind] Comparing: pressed="${pressed}" vs bound="${bound}"`);
+		
+		// Exact match
+		if (pressed === bound) return true;
+		
+		// Case-insensitive for letters
+		if (pressed.toLowerCase() === bound.toLowerCase()) return true;
+		
+		// Robust Space handling
+		const isPressedSpace = pressed === " " || pressed.toLowerCase() === "space" || pressed === "";
+		const isBoundSpace = bound === " " || bound.toLowerCase() === "space";
+		
+		if (isPressedSpace && isBoundSpace) return true;
+		
+		return false;
+	}
 
 	document.addEventListener('keydown', (e) => {
-		if (!audioUnlocked) return;
-		const key = e.key.toLowerCase();
+		if (!audioUnlocked) {
+			console.log("[Keybind] Audio not unlocked - ignoring");
+			return;
+		}
 
-		if (key === keybinds.PTT.trim().toLowerCase()) {
-			if (e.repeat) return; // <-- ignore repeats
+		let pressed = e.key;
+		
+		// Force Space to be properly represented
+		if (e.code === "Space" || pressed === " ") {
+			pressed = " ";   // ensure it's a space
+		}
+		
+		console.log(`[Keybind] KEYDOWN: "${pressed}" (code:${e.code}) repeat:${e.repeat}`);
+
+		// PTT
+		if (keyMatches(pressed, keybinds.PTT)) {
+			console.log(`✅ PTT MATCHED (${keybinds.PTT})`);
+			
+			if (e.repeat || isPTTHeld) {
+				console.log("[Keybind] PTT ignored (repeat/held)");
+				return;
+			}
+			
+			isPTTHeld = true;
+			console.log("[Keybind] Starting PTT");
+			
 			if (!isTalking) toggleStream('on');
 			pttButton.classList.add('active');
+			
+			// Prevent scrolling when using Space
+			if (e.code === "Space") e.preventDefault();
+			
+			return;
+		}
+
+		// DEAFEN
+		if (keyMatches(pressed, keybinds.Deafen)) {
+			console.log(`✅ DEAFEN MATCHED (${keybinds.Deafen})`);
+			toggleDeafen();
+			e.preventDefault();
+			return;
+		}
+
+		// ALARM
+		if (keyMatches(pressed, keybinds.Alarm)) {
+			console.log(`✅ ALARM MATCHED (${keybinds.Alarm})`);
+			alarmBtn.click();
+			e.preventDefault();
+			return;
 		}
 	});
 
 	document.addEventListener('keyup', (e) => {
-		if (e.key.toLowerCase() === keybinds.PTT.trim().toLowerCase()) {
+		let released = e.key;
+		
+		if (e.code === "Space" || released === " ") {
+			released = " ";
+		}
+		
+		console.log(`[Keybind] KEYUP: "${released}"`);
+		
+		if (keyMatches(released, keybinds.PTT)) {
+			console.log("✅ PTT released");
+			isPTTHeld = false;
 			toggleStream('off');
 			pttButton.classList.remove('active');
 		}
 	});
-
     // ==================== USER DROPDOWNS ====================
     function populateSelect(select) {
         select.innerHTML = '';
