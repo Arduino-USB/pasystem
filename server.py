@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, Response
 from remote_server import ConfigServer
+from update_server import UpdateServer
 from mumbleman import MumbleMgr, PyAudioMgr
 import threading
 import queue
@@ -11,7 +12,7 @@ import os
 
 # Remote server for device management
 config_server = ConfigServer()
-
+update_server = UpdateServer()
 # Server-side Mumble client (Username: Office)
 m = MumbleMgr("127.0.0.1", "Office", password="password")
 

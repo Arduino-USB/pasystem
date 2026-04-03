@@ -1,9 +1,7 @@
 #!/bin/bash
 # Path to the bare repo
 BARE_REPO="$(pwd)"
-
 ROLE_FILE="$BARE_REPO/ROLE"
-
 if [[ ! -f "$ROLE_FILE" ]]; then
     echo "ERROR: ROLE file missing in bare repo!"
     exit 1
@@ -26,25 +24,49 @@ TMP_DIR="$(mktemp -d)"
 # Checkout the latest pushed branch into a temp dir
 git --work-tree="$TMP_DIR" checkout -f
 
-# Rsync to parent dir, excluding the bare repo folder itself
-rsync -a --delete --exclude="$(basename "$BARE_REPO")" "$TMP_DIR/" "$PARENT_DIR/"
+# Clean up temp dir after we're done
+cleanup() {
+    rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
 
-# Clean up temp dir
-rm -rf "$TMP_DIR"
-
-if [[ $ROLE == "server" ]]; then
-	cp $PARENT_DIR/systemd/mumble-headless-server.service /home/$USER/.config/systemd/user/
-	systemctl daemon-reload --user
-	systemctl restart mumble-headless-server --user 
-	sudo systemctl restart mumble-server
-elif [[ $ROLE == "client" ]]; then
-	cp $PARENT_DIR/systemd/mumble-headless-client.service /home/$USER/.config/systemd/user/
-	systemctl daemon-reload --user
-	systemctl restart mumble-headless-client --user
+# Rsync to parent dir, but respect .gitignore
+if [[ -f "$BARE_REPO/.gitignore" ]]; then
+    echo "Using .gitignore from bare repo to exclude files..."
+    
+    # Build exclude list from .gitignore (filtering out comments and empty lines)
+    EXCLUDES=()
+    while IFS= read -r pattern || [[ -n "$pattern" ]]; do
+        # Skip comments and empty lines
+        [[ -z "$pattern" || "$pattern" =~ ^[[:space:]]*# ]] && continue
+        # Remove leading/trailing whitespace
+        pattern="${pattern#"${pattern%%[![:space:]]*}"}"
+        pattern="${pattern%"${pattern##*[![:space:]]}"}"
+        [[ -n "$pattern" ]] && EXCLUDES+=("--exclude=$pattern")
+    done < "$BARE_REPO/.gitignore"
+    
+    # Rsync with .gitignore patterns + always exclude the bare repo itself
+    rsync -a --delete "${EXCLUDES[@]}" \
+        --exclude="$(basename "$BARE_REPO")" \
+        --exclude=".git" \
+        "$TMP_DIR/" "$PARENT_DIR/"
+else
+    echo "No .gitignore found in bare repo. Performing standard rsync..."
+    rsync -a --delete --exclude="$(basename "$BARE_REPO")" \
+        --exclude=".git" \
+        "$TMP_DIR/" "$PARENT_DIR/"
 fi
-# Restart services
 
+# Service handling
+if [[ $ROLE == "server" ]]; then
+    cp "$PARENT_DIR/systemd/mumble-office-server.service" /home/"$USER"/.config/systemd/user/ 2>/dev/null || true
+    systemctl daemon-reload --user
+    systemctl restart mumble-office-server --user
+    sudo systemctl restart mumble-server || true
+elif [[ $ROLE == "client" ]]; then
+    cp "$PARENT_DIR/systemd/mumble-headless-client.service" /home/"$USER"/.config/systemd/user/ 2>/dev/null || true
+    systemctl daemon-reload --user
+    systemctl restart mumble-headless-client --user
+fi
 
 echo "Updates successful"
-
-

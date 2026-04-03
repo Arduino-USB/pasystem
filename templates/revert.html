@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}Previous Versions - PA System{% endblock %}
+
+{% block styles %}
+<style>
+    .container {
+        max-width: 780px;
+        width: 100%;
+    }
+
+    .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    .version-card {
+        background: #27272a;
+        border-radius: 24px;
+        padding: 26px;
+        margin-bottom: 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .version-name {
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
+
+    .btn-small {
+        padding: 12px 32px;
+        border-radius: 9999px;
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s;
+    }
+
+    .btn-update-small {
+        background: #10b981;
+        color: white;
+    }
+    .btn-update-small:hover {
+        background: #34d399;
+    }
+
+    .btn-delete {
+        background: #ef4444;
+        color: white;
+    }
+    .btn-delete:hover {
+        background: #f87171;
+    }
+
+    .spinner {
+        width: 28px;
+        height: 28px;
+        border: 4px solid rgba(255,255,255,0.2);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="header">
+        <h1>Previous Versions</h1>
+        <button onclick="goToMain()" 
+                style="background:#3f3f46; color:white; border:none; padding:12px 28px; border-radius:9999px; font-size:1rem; cursor:pointer;">
+            ← Back to Main
+        </button>
+    </div>
+
+    <div id="versions-list">
+        <!-- Populated by JavaScript -->
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function loadVersions() {
+        const container = document.getElementById('versions-list');
+        container.innerHTML = `<div style="text-align:center; padding:80px; color:#71717a;">Loading previous versions...</div>`;
+
+        try {
+            const res = await fetch('/get_all_versions');
+            const versions = await res.json();
+
+            if (versions.length === 0) {
+                container.innerHTML = `<div style="text-align:center; padding:100px 20px; color:#a1a1aa;">No previous versions stored yet.</div>`;
+                return;
+            }
+
+            let html = '';
+            for (const v of versions) {
+                const name = v.replace('.zip', '');
+                html += `
+                <div class="version-card">
+                    <div>
+                        <div class="version-name">${name}</div>
+                        <div style="color:#a1a1aa; margin-top:4px;">${v}</div>
+                    </div>
+                    <div style="display: flex; gap: 12px;">
+                        <button onclick="revertToVersion('${v}')" class="btn-small btn-update-small">Update Network</button>
+                        <button onclick="deleteVersion('${v}')" class="btn-small btn-delete">Delete</button>
+                    </div>
+                </div>`;
+            }
+            container.innerHTML = html;
+        } catch (e) {
+            container.innerHTML = `<div style="color:#ef4444; text-align:center; padding:60px;">Failed to load versions</div>`;
+        }
+    }
+
+    async function revertToVersion(version) {
+        if (!confirm(`Push version "${version}" to ALL devices on the network?`)) return;
+
+        try {
+            const res = await fetch(`/update_network?version=${encodeURIComponent(version)}`);
+            const data = await res.json();
+
+            if (data.status === "update_started") {
+                alert(`✅ Update with version ${version} has been started.`);
+            } else if (data.error) {
+                alert("❌ " + data.error);
+            }
+        } catch (e) {
+            alert("❌ Connection error");
+        }
+    }
+
+    async function deleteVersion(version) {
+        if (!confirm(`Permanently delete version "${version}"?`)) return;
+
+        try {
+            await fetch(`/delete_version?version=${encodeURIComponent(version)}`);
+            loadVersions();        // refresh the list
+        } catch (e) {
+            alert("Failed to delete version");
+        }
+    }
+
+    function goToMain() {
+        window.location.href = "/";
+    }
+
+    // Load versions when page opens
+    window.onload = loadVersions;
+</script>
+{% endblock %}

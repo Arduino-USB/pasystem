@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}PA System Update{% endblock %}
+
+{% block styles %}
+<style>
+    .container {
+        max-width: 720px;
+        width: 100%;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+        margin-top: 20px;
+    }
+
+    .btn {
+        height: 260px;
+        border-radius: 28px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.25s ease;
+        cursor: pointer;
+        border: none;
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: white;
+    }
+
+    .btn-update {
+        background: linear-gradient(145deg, #10b981, #059669);
+        box-shadow: 0 20px 30px -8px rgb(16 185 129 / 0.5);
+    }
+    .btn-update:hover {
+        transform: translateY(-8px);
+        box-shadow: 0 25px 35px -8px rgb(16 185 129 / 0.6);
+    }
+
+    .btn-revert {
+        background: #27272a;
+        box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.5);
+    }
+    .btn-revert:hover {
+        background: #3f3f46;
+        transform: translateY(-8px);
+    }
+
+    .btn:active {
+        transform: scale(0.94);
+    }
+
+    .icon {
+        font-size: 5rem;
+        margin-bottom: 20px;
+        opacity: 0.95;
+    }
+
+    #usb-status {
+        text-align: center;
+        font-size: 1.25rem;
+        margin: 35px 0 45px 0;
+        font-weight: 500;
+        min-height: 28px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container" id="main-screen">
+    <h1>PA System</h1>
+    <p class="subtitle">Update Controller</p>
+
+    <div id="usb-status">
+        Detecting USB drive...
+    </div>
+
+    <div class="grid">
+        <button onclick="triggerUpdateNow()" class="btn btn-update">
+            <div class="icon">📤</div>
+            <div>Update Now</div>
+            <div style="font-size: 1.05rem; opacity: 0.85; margin-top: 10px;">from USB drive</div>
+        </button>
+
+        <button onclick="goToRevert()" class="btn btn-revert">
+            <div class="icon">⏪</div>
+            <div>Previous Versions</div>
+            <div style="font-size: 1.05rem; opacity: 0.75; margin-top: 10px;">revert or manage</div>
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    async function fetchStatus() {
+        try {
+            const res = await fetch('/get_update_status');
+            const data = await res.json();
+            
+            const el = document.getElementById('usb-status');
+            if (data.connected) {
+                el.innerHTML = `✅ USB drive connected <small style="color:#a1a1aa">(${data.path})</small>`;
+            } else {
+                el.innerHTML = `⚠️ Insert USB containing <strong>pa-system-update.zip</strong>`;
+            }
+        } catch (e) {
+            document.getElementById('usb-status').innerHTML = `❌ Status unavailable`;
+        }
+    }
+
+    async function triggerUpdateNow() {
+        if (!confirm("Start network-wide update from the USB drive now?")) return;
+
+        const btn = event.currentTarget;
+        const originalHTML = btn.innerHTML;
+
+        btn.style.opacity = "0.65";
+        btn.style.pointerEvents = "none";
+        btn.innerHTML = `<div style="width:48px;height:48px;border:5px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:spin 1s linear infinite;margin-bottom:20px;"></div><div>Updating Network...</div>`;
+
+        try {
+            const res = await fetch('/update_network?version=now');
+            const data = await res.json();
+
+            if (data.status === "update_started") {
+                alert("✅ Network update has been started.");
+            } else if (data.error) {
+                alert("❌ " + data.error);
+            }
+        } catch (e) {
+            alert("❌ Could not reach the server.");
+        } finally {
+            btn.style.opacity = "1";
+            btn.style.pointerEvents = "auto";
+            btn.innerHTML = originalHTML;
+            fetchStatus();
+        }
+    }
+
+    function goToRevert() {
+        window.location.href = "/revert";
+    }
+
+    // Start polling USB status
+    window.onload = () => {
+        fetchStatus();
+        setInterval(fetchStatus, 3000);
+    };
+</script>
+{% endblock %}
