@@ -273,16 +273,29 @@
     </div>
 
     <!-- Keybind Settings Popup -->
-    <div id="keybindPopup">
-        <h3>Keybind Settings</h3>
-        <label>Push-to-Talk: <input id="keyPTT"></label><br>
-        <label>Deafen: <input id="keyDeafen"></label><br>
-        <label>Alarm: <input id="keyAlarm"></label><br>
-        <label>Dropdown: <input id="keyDropdown"></label><br>
-        <button onclick="saveKeybinds()">Save</button>
-        <button onclick="closeKeybindPopup()">Cancel</button>
-    </div>
+	<div id="keybindPopup" style="display: none;">
+		<h3>Keybind Settings</h3>
+		<p><strong>Click on a field, then press the key you want.</strong></p>
+		
+		<label>Push-to-Talk: 
+			<input id="keyPTT" readonly placeholder="Click and press key">
+		</label><br><br>
+		
+		<label>Deafen: 
+			<input id="keyDeafen" readonly placeholder="Click and press key">
+		</label><br><br>
+		
+		<label>Alarm: 
+			<input id="keyAlarm" readonly placeholder="Click and press key">
+		</label><br><br>
+		
+		<label>Dropdown: 
+			<input id="keyDropdown" readonly placeholder="Click and press key">
+		</label><br><br>
 
+		<button onclick="saveKeybinds()">Save</button>
+		<button onclick="closeKeybindPopup()">Cancel</button>
+	</div>
     <!-- Main content -->
     <div class="cont">
         <button
@@ -325,6 +338,7 @@
     let audioCtx;
     let audioUnlocked = false;
     let isDeafened = false;
+	let isKeybindPopupOpen = false;
 
     // ==================== JITTER BUFFER ====================
     const SAMPLE_RATE = 48000;
@@ -348,6 +362,7 @@
     let micStream = null;
     let processor = null;
     let sourceNode = null;
+	
 
     // ==================== ONLOAD ====================
     window.onload = function() {
@@ -367,6 +382,7 @@
 
         updateDeafenButton();
         loadKeybinds();
+		setupKeyCapture();
     };
 
     // ==================== AUDIO CONTEXT UNLOCK ====================
@@ -528,6 +544,12 @@
 	}
 
 	document.addEventListener('keydown', (e) => {
+		
+		if (isKeybindPopupOpen) {
+			return;   // no more dih! no more dih!
+		}
+		
+		
 		if (!audioUnlocked) {
 			console.log("[Keybind] Audio not unlocked - ignoring");
 			return;
@@ -596,6 +618,42 @@
 			pttButton.classList.remove('active');
 		}
 	});
+	
+	
+	// ==================== AUTO KEY CAPTURE IN POPUP ====================
+	function setupKeyCapture() {
+		const inputs = ['keyPTT', 'keyDeafen', 'keyAlarm', 'keyDropdown'];
+		
+		inputs.forEach(id => {
+			const input = document.getElementById(id);
+			if (!input) return;
+
+			input.addEventListener('keydown', function(e) {
+				e.preventDefault(); // Stop normal typing
+
+				let keyName = e.key;
+
+				// Special handling for common keys
+				if (e.code === "Space") keyName = "Space";
+				else if (e.key === " ") keyName = "Space";
+				else if (e.key.length === 1) keyName = e.key.toUpperCase();
+
+				this.value = keyName;
+				console.log(`Captured key for ${id}: ${keyName}`);
+			});
+
+			// Visual feedback when focused
+			input.addEventListener('focus', function() {
+				this.style.backgroundColor = '#ffffcc';
+				this.placeholder = "Press any key...";
+			});
+
+			input.addEventListener('blur', function() {
+				this.style.backgroundColor = '';
+			});
+		});
+	}
+	
     // ==================== USER DROPDOWNS ====================
     function populateSelect(select) {
         select.innerHTML = '';
@@ -700,6 +758,7 @@
     }
 
     function openKeybindPopup() {
+		isKeybindPopupOpen = true;
         document.getElementById('keyPTT').value = keybinds.PTT;
         document.getElementById('keyDeafen').value = keybinds.Deafen;
         document.getElementById('keyAlarm').value = keybinds.Alarm;
@@ -708,6 +767,7 @@
     }
 
     function closeKeybindPopup() {
+		isKeybindPopupOpen = false;
         document.getElementById('keybindPopup').style.display = 'none';
     }
 
