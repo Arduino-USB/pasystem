@@ -6,8 +6,89 @@ import zipfile
 import subprocess
 import socket
 import shutil
+import ipaddress
 from datetime import datetime
 from flask import Flask, jsonify, request, render_template
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+
+class PortScanner:
+    def __init__(self, target_port, timeout=0.5, max_threads=100):
+        self.target_port = target_port
+        self.timeout = timeout
+        self.max_threads = max_threads
+        self.network = self._get_local_network()
+
+    def _get_local_ip(self):
+        """Get local IP address"""
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+        finally:
+            s.close()
+
+    def _get_subnet_mask(self):
+        """Get subnet mask from OS (Windows/Linux)"""
+        system = platform.system()
+
+        try:
+            if system == "Windows":
+                output = subprocess.check_output("ipconfig", text=True)
+                match = re.search(r"Subnet Mask[^\d]*(\d+\.\d+\.\d+\.\d+)", output)
+                if match:
+                    return match.group(1)
+
+            elif system in ("Linux", "Darwin"):
+                output = subprocess.check_output(["ip", "addr"], text=True)
+                match = re.search(r"inet\s+\d+\.\d+\.\d+\.\d+/(\d+)", output)
+                if match:
+                    prefix = int(match.group(1))
+                    return str(ipaddress.IPv4Network(f"0.0.0.0/{prefix}").netmask)
+
+        except Exception as e:
+            print(f"[!] Failed to detect subnet mask: {e}")
+
+        # fallback
+        return "255.255.255.0"
+
+    def _get_local_network(self):
+        ip = self._get_local_ip()
+        mask = self._get_subnet_mask()
+
+        print(f"[+] Local IP: {ip}")
+        print(f"[+] Subnet mask: {mask}")
+
+        network = ipaddress.IPv4Network(f"{ip}/{mask}", strict=False)
+        print(f"[+] Network detected: {network}")
+
+        return network
+
+    def _scan_ip(self, ip):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(self.timeout)
+                if s.connect_ex((str(ip), self.target_port)) == 0:
+                    return str(ip)
+        except Exception:
+            pass
+        return None
+
+    def scan_network(self):
+        """Blocking scan, returns list of IPs with port open."""
+        found_ips = []
+
+        with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+            futures = [executor.submit(self._scan_ip, ip) for ip in self.network.hosts()]
+
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    print(f"[+] Found open port on {result}")
+                    found_ips.append(result)
+
+        return found_ips
+
 
 class UpdateServer:
     def __init__(self):
@@ -143,7 +224,11 @@ class UpdateServer:
                 subprocess.check_call(['git', 'branch', '-M', 'main'], cwd=tmp_repo, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
                 # 4. Discover all network devices with SSH (port 22) open
-                targets = self._discover_ssh_targets()
+				
+				port_scanner = GetIPList(22)
+				
+				
+                targets = port_scanner
 
                 results = {}
                 for ip in targets:
@@ -202,6 +287,8 @@ class UpdateServer:
 
         except Exception:
             pass
+			
+		print("Found SSH targets: ")
         return list(targets)
 
     def _check_port_worker(self, ip: str, targets: set):
