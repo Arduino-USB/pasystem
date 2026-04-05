@@ -1,7 +1,11 @@
 #!/bin/bash
-# Path to the bare repo
+
+# -------------------------------
+# Paths & ROLE
+# -------------------------------
 BARE_REPO="$(pwd)"
 ROLE_FILE="$BARE_REPO/ROLE"
+
 if [[ ! -f "$ROLE_FILE" ]]; then
     echo "ERROR: ROLE file missing in bare repo!"
     exit 1
@@ -9,64 +13,68 @@ fi
 
 ROLE=$(cat "$ROLE_FILE")
 
-# Check if ROLE is valid
 if [[ "$ROLE" != "server" && "$ROLE" != "client" ]]; then
     echo "ERROR: Invalid ROLE '$ROLE'! Must be 'server' or 'client'."
     exit 1
 fi
 
-# Parent directory (where we want to deploy)
+# Parent dir (where we deploy)
 PARENT_DIR="$(dirname "$BARE_REPO")"
 
-# Temporary directory to check out files
+# Temp dir for checkout
 TMP_DIR="$(mktemp -d)"
 
-# Checkout the latest pushed branch into a temp dir
-git --work-tree="$TMP_DIR" checkout -f
-
-# Clean up temp dir after we're done
 cleanup() {
     rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
 
-# Rsync to parent dir, but respect .gitignore
+# -------------------------------
+# Ensure there is at least one commit
+# -------------------------------
+if ! git rev-parse HEAD >/dev/null 2>&1; then
+    echo "[post-receive] Bare repo empty, creating initial commit..."
+    git --allow-empty commit -m "Initial commit" >/dev/null 2>&1
+fi
+
+# -------------------------------
+# Checkout & Deploy
+# -------------------------------
+echo "[post-receive] Checking out 'main' branch to temp dir $TMP_DIR..."
+git --work-tree="$TMP_DIR" checkout -f main
+
+# Prepare rsync excludes from .gitignore
+EXCLUDES=()
 if [[ -f "$BARE_REPO/.gitignore" ]]; then
-    echo "Using .gitignore from bare repo to exclude files..."
-    
-    # Build exclude list from .gitignore (filtering out comments and empty lines)
-    EXCLUDES=()
+    echo "[post-receive] Using .gitignore from bare repo..."
     while IFS= read -r pattern || [[ -n "$pattern" ]]; do
-        # Skip comments and empty lines
         [[ -z "$pattern" || "$pattern" =~ ^[[:space:]]*# ]] && continue
-        # Remove leading/trailing whitespace
         pattern="${pattern#"${pattern%%[![:space:]]*}"}"
         pattern="${pattern%"${pattern##*[![:space:]]}"}"
         [[ -n "$pattern" ]] && EXCLUDES+=("--exclude=$pattern")
     done < "$BARE_REPO/.gitignore"
-    
-    # Rsync with .gitignore patterns + always exclude the bare repo itself
-    rsync -a --delete "${EXCLUDES[@]}" \
-        --exclude="$(basename "$BARE_REPO")" \
-        --exclude=".git" \
-        "$TMP_DIR/" "$PARENT_DIR/"
-else
-    echo "No .gitignore found in bare repo. Performing standard rsync..."
-    rsync -a --delete --exclude="$(basename "$BARE_REPO")" \
-        --exclude=".git" \
-        "$TMP_DIR/" "$PARENT_DIR/"
 fi
 
-# Service handling
-if [[ $ROLE == "server" ]]; then
+echo "[post-receive] Deploying files via rsync..."
+rsync -a --delete "${EXCLUDES[@]}" \
+    --exclude="$(basename "$BARE_REPO")" \
+    --exclude=".git" \
+    "$TMP_DIR/" "$PARENT_DIR/"
+
+# -------------------------------
+# Service Handling
+# -------------------------------
+if [[ "$ROLE" == "server" ]]; then
+    echo "[post-receive] Deploying server services..."
     cp "$PARENT_DIR/systemd/mumble-office-server.service" /home/"$USER"/.config/systemd/user/ 2>/dev/null || true
     systemctl daemon-reload --user
     systemctl restart mumble-office-server --user
     sudo systemctl restart mumble-server || true
-elif [[ $ROLE == "client" ]]; then
+elif [[ "$ROLE" == "client" ]]; then
+    echo "[post-receive] Deploying client services..."
     cp "$PARENT_DIR/systemd/mumble-headless-client.service" /home/"$USER"/.config/systemd/user/ 2>/dev/null || true
     systemctl daemon-reload --user
     systemctl restart mumble-headless-client --user
 fi
 
-echo "Updates successful"
+echo "[post-receive] Updates successful ✅"
