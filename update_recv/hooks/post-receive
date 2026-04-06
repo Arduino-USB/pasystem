@@ -82,6 +82,8 @@ if [[ -f "$PARENT_DIR/python-runtime.zip" ]]; then
     echo "[post-receive] Installing python runtime..."
     mkdir -p "$DEPS_DIR/python-runtime"
     unzip -o "$PARENT_DIR/python-runtime.zip" -d "$DEPS_DIR/python-runtime"
+	
+	rm "$PARENT_DIR/python-runtime.zip"
 else
     echo "[post-receive] Skipping python-runtime (zip not found)"
 fi
@@ -100,6 +102,8 @@ if [[ -f "$PARENT_DIR/site-packages.zip" ]]; then
         mkdir -p "$SITE_PACKAGES_PATH"
 
         unzip -o "$PARENT_DIR/site-packages.zip" -d "$SITE_PACKAGES_PATH"
+		
+		rm "$PARENT_DIR/site-packages.zip"
     else
 
 
