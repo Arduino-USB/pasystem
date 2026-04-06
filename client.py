@@ -27,13 +27,13 @@ def play_audio_callback(user, soundchunk):
 	except:
 		pass
 
-m.play_audio_callback = play_audio_callback
+
 
 
 # remote.get_room() provides the username as per your setup
 m = MumbleMgr(remote.get_ip(), remote.get_room(), password=remote.get_password())
 m.start_ffmpeg_process()
-
+m.play_audio_callback = play_audio_callback
 
 
 def push_to_talk():
