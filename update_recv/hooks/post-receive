@@ -31,6 +31,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+mkdir -p "$DEPS_DIR"
+
 # -------------------------------
 # Ensure there is at least one commit
 # -------------------------------
