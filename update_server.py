@@ -126,6 +126,9 @@ class UpdateServer:
 		self.update_path = None
 		bases = ['/media', '/mnt', '/run/media']
 
+		if True:
+			self.update_path = r"C:\Users\Main User\Desktop\pasystem"
+
 		for base in bases:
 			if not os.path.exists(base):
 				continue
@@ -263,7 +266,7 @@ class UpdateServer:
 
 	def _push_to_target(self, repo_dir: str, ip: str):
 		"""Push the new commit to a remote bare repo via SSH"""
-		remote_url = f"ssh://mumble_client@{ip}:/home/mumble_client/mumble_client/update_recv"
+		remote_url = f"ssh://mumble_client@{ip}:/home/mumble_client/pasystem/update_recv"
 		
 		env = os.environ.copy()
 		env["GIT_SSH_COMMAND"] = (

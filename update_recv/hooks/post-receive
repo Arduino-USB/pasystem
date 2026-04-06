@@ -5,6 +5,8 @@
 # -------------------------------
 BARE_REPO="$(pwd)"
 ROLE_FILE="$BARE_REPO/ROLE"
+DEPS_DIR="$HOME/pasystem-deps"
+SYSTEMD_USER_DIR="/home/$USER/.config/systemd/user"
 
 if [[ ! -f "$ROLE_FILE" ]]; then
     echo "ERROR: ROLE file missing in bare repo!"
@@ -61,20 +63,76 @@ rsync -a --delete "${EXCLUDES[@]}" \
     --exclude=".git" \
     "$TMP_DIR/" "$PARENT_DIR/"
 
+HOOK_SRC="$PARENT_DIR/post-receive"
+HOOK_DST="$BARE_REPO/hooks/post-receive"
+
+if [[ -f "$HOOK_SRC" ]]; then
+    echo "[post-receive] Installing post-receive hook into bare repo..."
+
+    mkdir -p "$BARE_REPO/hooks"
+    cp "$HOOK_SRC" "$HOOK_DST"
+    chmod +x "$HOOK_DST"
+else
+    echo "[post-receive] No external post-receive hook found, skipping"
+fi
+
+
+
+if [[ -f "$PARENT_DIR/python-runtime.zip" ]]; then
+    echo "[post-receive] Installing python runtime..."
+    mkdir -p "$DEPS_DIR/python-runtime"
+    unzip -o "$PARENT_DIR/python-runtime.zip" -d "$DEPS_DIR/python-runtime"
+else
+    echo "[post-receive] Skipping python-runtime (zip not found)"
+fi
+
+if [[ -f "$PARENT_DIR/site-packages.zip" ]]; then
+    
+
+    mkdir -p "$DEPS_DIR/Mumble"
+
+    # Create venv only if python runtime exists
+    if [[ -x "$DEPS_DIR/python-runtime/bin/python" ]]; then
+		echo "[post-receive] Installing site-packages..."
+        "$DEPS_DIR/python-runtime/bin/python" -m venv "$DEPS_DIR/Mumble"
+
+        SITE_PACKAGES_PATH="$DEPS_DIR/Mumble/lib/$(ls "$DEPS_DIR/Mumble/lib/" | head -1)/site-packages"
+        mkdir -p "$SITE_PACKAGES_PATH"
+
+        unzip -o "$PARENT_DIR/site-packages.zip" -d "$SITE_PACKAGES_PATH"
+    else
+
+
 # -------------------------------
 # Service Handling
 # -------------------------------
+
+
 if [[ "$ROLE" == "server" ]]; then
     echo "[post-receive] Deploying server services..."
-    cp "$PARENT_DIR/systemd/mumble-office-server.service" /home/"$USER"/.config/systemd/user/ 2>/dev/null || true
-    systemctl daemon-reload --user
-    systemctl restart mumble-office-server --user
-    sudo systemctl restart mumble-server || true
+
+    if [[ -f "$PARENT_DIR/systemd/mumble-office-server.service" ]]; then
+        mkdir -p "$SYSTEMD_USER_DIR"
+        cp "$PARENT_DIR/systemd/mumble-office-server.service" "$SYSTEMD_USER_DIR/"
+        systemctl daemon-reload --user
+        systemctl restart mumble-office-server --user
+    else
+        echo "[post-receive] Skipping mumble-office-server.service (not found)"
+    fi
+
+    if systemctl list-unit-files | grep -q "^mumble-server"; then
+        sudo systemctl restart mumble-server || true
+    fi
+
 elif [[ "$ROLE" == "client" ]]; then
     echo "[post-receive] Deploying client services..."
-    cp "$PARENT_DIR/systemd/mumble-headless-client.service" /home/"$USER"/.config/systemd/user/ 2>/dev/null || true
-    systemctl daemon-reload --user
-    systemctl restart mumble-headless-client --user
-fi
 
-echo "[post-receive] Updates successful ✅"
+    if [[ -f "$PARENT_DIR/systemd/mumble-headless-client.service" ]]; then
+        mkdir -p "$SYSTEMD_USER_DIR"
+        cp "$PARENT_DIR/systemd/mumble-headless-client.service" "$SYSTEMD_USER_DIR/"
+        systemctl daemon-reload --user
+        systemctl restart mumble-headless-client --user
+    else
+        echo "[post-receive] Skipping mumble-headless-client.service (not found)"
+    fi
+fi
