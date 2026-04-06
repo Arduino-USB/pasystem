@@ -126,8 +126,6 @@ class UpdateServer:
 		self.update_path = None
 		bases = ['/media', '/mnt', '/run/media']
 
-		if True:
-			self.update_path = r"C:\Users\Main User\Desktop\pasystem"
 
 		for base in bases:
 			if not os.path.exists(base):
