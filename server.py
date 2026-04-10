@@ -18,6 +18,22 @@ m = MumbleMgr("127.0.0.1", "Office", password="password")
 
 sound_queue = queue.Queue()
 
+mic_queue = queue.Queue(maxsize=50)	# small buffer
+
+def audio_worker():
+	print("[mic_worker] Running mic worker")
+	while True:
+		try:
+			chunk = mic_queue.get()
+			if chunk is None:
+				break
+			m.play_raw_audio(chunk)
+		except Exception as e:
+			print("Audio worker error:", e)
+
+# start worker thread once at startup
+threading.Thread(target=audio_worker, daemon=True).start()
+
 
 def play_audio_callback(user, soundchunk):
 	# assuming soundchunk.pcm is bytes
@@ -89,7 +105,11 @@ def talk():
 		print(f"[talk] Setiing whisper list to {whisper_list}")
 		m.mumble.sound_output.set_whisper(whisper_list)
 
-	m.play_raw_audio(pcm_data)
+	try:
+		mic_queue.put(pcm_data, timeout=0.1)
+	except queue.Full:
+		print("Audio buffer full, dropping chunk")
+		
 	return '', 200
 	
 	
