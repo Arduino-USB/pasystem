@@ -74,7 +74,7 @@ def push_to_alarm():
 
             if alarm_button_toggle:
                 print("[main] Alarm ON")
-                m.play_file("alarm.mp3")
+                m.play_file("alarm.wav")
             else:
                 print("[main] Alarm OFF")
                 m.playing_audio = False
