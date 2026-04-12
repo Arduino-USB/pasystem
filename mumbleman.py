@@ -6,7 +6,7 @@ import pyaudio
 import time
 
 class MumbleMgr:
-	def __init__(self, host, nickname, whisper=None, password="", gain=3.0):
+	def __init__(self, host, nickname, whisper=None, password=""):
 		print(f"Starting MumbleMgr as {nickname}")
 
 		self.host = host
@@ -19,9 +19,7 @@ class MumbleMgr:
 		self.mumble = None
 		self.running = True
 		self.playing_audio = False
-		
-		self.gain = gain
-
+	
 		# Threaded connection manager
 		threading.Thread(target=self.connect_loop, daemon=True).start()
 
@@ -63,14 +61,9 @@ class MumbleMgr:
 
 	def play_raw_audio(self, data):
 		"""For microphone streaming"""
-		
-		#Make it louder
-		audio = np.frombuffer(data, dtype=np.int16)
-		audio = np.clip(audio * self.gain, -32768, 32767).astype(np.int16)
-		louder_data = audio.tobytes()
 
 		if self.mumble and self.mumble.is_alive():
-			self.mumble.sound_output.add_sound(louder_data)
+			self.mumble.sound_output.add_sound(data)
 
 	def start_ffmpeg_process(self):
 		self.ffmpeg_process = None
@@ -95,13 +88,11 @@ class MumbleMgr:
 
 				while self.playing_audio:
 					chunk = process.stdout.read(4096)
-					audio = np.frombuffer(chunk, dtype=np.int16)
-					audio = np.clip(audio * self.gain, -32768, 32767).astype(np.int16)
-					louder_chunk = audio.tobytes()
+		
 					if not chunk:
 						break
 					if self.mumble:
-						self.mumble.sound_output.add_sound(louder_chunk)
+						self.mumble.sound_output.add_sound(chunk)
 
 					time.sleep(4096 / (48000 * 2 * 1))
 
