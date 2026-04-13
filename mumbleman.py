@@ -56,10 +56,10 @@ class MumbleMgr:
 	def _play_sound(self, user, soundchunk):
 		"""Callback to play audio from other users"""
 		if callable(self.play_audio_callback):
-			print("[_play_sound] playing audio")
+			#print("[_play_sound] playing audio")
 			self.play_audio_callback(user, soundchunk)
 		else:
-			print("[_play_sound] callback not found")
+			#print("[_play_sound] callback not found")
 
 	def play_raw_audio(self, data):
 		"""For microphone streaming"""
