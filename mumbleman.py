@@ -168,35 +168,98 @@ class MumbleMgr:
 		self.safe_disconnect()
 		
 
+
 class PyAudioMgr:
-	def __init__(self, chunck_size=960, sample_rate=48000, input=False, output=False):
+	def __init__(self, chunk_size=960, sample_rate=48000, input=False, output=False, debug=True):
 		if input == output:
 			raise ValueError("Exactly one of input or output must be True")
+
+		self.debug = debug
 		self.p = pyaudio.PyAudio()
 		self.stream = None
+
 		self.input = input
 		self.output = output
-		self.chunk_size = chunck_size
+		self.chunk_size = chunk_size
 		self.sample_rate = sample_rate
-	
+
+		if self.debug:
+			print(f"[PyAudioMgr] Initialized | input={self.input} output={self.output}")
+			print(f"[PyAudioMgr] chunk_size={self.chunk_size} sample_rate={self.sample_rate}")
+
+	def log(self, msg):
+		if self.debug:
+			print(f"[PyAudioMgr] {msg}")
+
 	def open_stream(self):
-		self.stream = self.p.open(
-			format=pyaudio.paInt16,
-			channels=1,
-			rate=self.sample_rate,
-			input=self.input,
-			output=self.output,
-			frames_per_buffer=self.chunk_size
-		)
+		self.log("Opening stream...")
+
+		try:
+			self.stream = self.p.open(
+				format=pyaudio.paInt16,
+				channels=1,
+				rate=self.sample_rate,
+				input=self.input,
+				output=self.output,
+				frames_per_buffer=self.chunk_size
+			)
+
+			self.log("Stream opened successfully")
+
+			self.log(f"Stream active: {self.stream.is_active()}")
+
+		except Exception as e:
+			self.log(f"FAILED to open stream: {e}")
+			raise
 
 	def get_audio_chunk(self):
-		if self.stream:
-			return self.stream.read(self.chunk_size, exception_on_overflow=False)
-		return b''
+		if not self.stream:
+			self.log("get_audio_chunk called but stream is None")
+			return b''
+
+		try:
+			data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+			self.log(f"Captured audio chunk: {len(data)} bytes")
+			return data
+
+		except Exception as e:
+			self.log(f"Error reading audio: {e}")
+			return b''
+
+	def write_audio_chunk(self, pcm):
+		if not self.stream:
+			self.log("write_audio_chunk called but stream is None")
+			return
+
+		try:
+			self.stream.write(pcm)
+			self.log(f"Wrote audio chunk: {len(pcm)} bytes")
+
+		except Exception as e:
+			self.log(f"Error writing audio: {e}")
 
 	def flush_audio(self):
 		if self.stream and self.input:
 			try:
-				self.stream.read(self.stream.get_read_available(), exception_on_overflow=False)
-			except:
-				pass
+				avail = self.stream.get_read_available()
+				self.log(f"Flushing {avail} frames")
+
+				self.stream.read(avail, exception_on_overflow=False)
+
+			except Exception as e:
+				self.log(f"Flush error: {e}")
+
+	def close(self):
+		self.log("Closing stream...")
+
+		try:
+			if self.stream:
+				self.stream.stop_stream()
+				self.stream.close()
+				self.stream = None
+
+			self.p.terminate()
+			self.log("Closed successfully")
+
+		except Exception as e:
+			self.log(f"Error during close: {e}")
