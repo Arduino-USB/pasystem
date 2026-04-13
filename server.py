@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, Response
 from remote_server import ConfigServer
 from update_server import UpdateServer
 from mumbleman import MumbleMgr, PyAudioMgr
+from flask_sock import Sock
 import threading
 import queue
 import base64
@@ -10,6 +11,7 @@ import ast
 import json
 import os
 
+mic_queue = queue.Queue(maxsize=200)
 # Remote server for device management
 config_server = ConfigServer()
 update_server = UpdateServer()
@@ -22,11 +24,14 @@ mic_queue = queue.Queue(maxsize=50)	# small buffer
 
 def audio_worker():
 	print("[mic_worker] Running mic worker")
+
 	while True:
+		chunk = mic_queue.get()
+
+		if chunk is None:
+			break
+
 		try:
-			chunk = mic_queue.get()
-			if chunk is None:
-				break
 			m.play_raw_audio(chunk)
 		except Exception as e:
 			print("Audio worker error:", e)
@@ -63,6 +68,7 @@ def usernames_to_session(usernames):
 	return return_list
 	
 app = Flask(__name__)
+sock = Sock(app)
 
 @app.route('/')
 def index():
@@ -92,25 +98,42 @@ def get_users():
 			
 	return {"users" : user_list}
 	
-@app.route('/talk', methods=['POST'])
-def talk():
-	users = ast.literal_eval(request.args.get("users", "[]"))
-	whisper_list = usernames_to_session(users)
-	pcm_data = request.data  # raw PCM 16-bit
 
-	if not whisper_list:
-		print("[talk] Removing Whisper")
-		m.mumble.sound_output.remove_whisper()
-	else:
-		print(f"[talk] Setiing whisper list to {whisper_list}")
-		m.mumble.sound_output.set_whisper(whisper_list)
+
+
+@sock.route('/talk_ws')
+def talk_ws(ws):
+	print("[ws] Client connected")
+
+	# --- get whisper users from query ---
+	users_param = request.args.get("users", "[]")
 
 	try:
-		mic_queue.put(pcm_data, timeout=0.1)
-	except queue.Full:
-		print("Audio buffer full, dropping chunk")
-		
-	return '', 200
+		users = json.loads(users_param)
+	except:
+		users = ast.literal_eval(users_param)
+
+	whisper_list = usernames_to_session(users)
+
+	if not whisper_list:
+		print("[ws] Removing Whisper")
+		m.mumble.sound_output.remove_whisper()
+	else:
+		print(f"[ws] Setting whisper list to {whisper_list}")
+		m.mumble.sound_output.set_whisper(whisper_list)
+
+	# --- receive audio stream ---
+	while True:
+		data = ws.receive()
+		if data is None:
+			break
+
+		try:
+			mic_queue.put_nowait(data)
+		except queue.Full:
+			print("Audio buffer full, dropping chunk")
+
+	print("[ws] Client disconnected")
 	
 	
 @app.route('/play_file')

@@ -335,20 +335,27 @@
     };
 
     // ==================== AUDIO CONTEXT UNLOCK ====================
-    window.unlockAudio = async function() {
-        if (audioUnlocked) return;
-        try {
-            if (audioCtx.state === 'suspended') await audioCtx.resume();
-            audioUnlocked = true;
-            const overlay = document.getElementById('audioUnlockOverlay');
-            overlay.classList.add('hidden');
-            setTimeout(() => {
-                if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
-            }, 800);
-        } catch (err) {
-            console.error("Failed to resume AudioContext:", err);
-        }
-    };
+	window.unlockAudio = async function() {
+		if (audioUnlocked) return;
+
+		try {
+			if (audioCtx && audioCtx.state === 'suspended') {
+				await audioCtx.resume();
+			}
+			audioUnlocked = true;
+
+			const overlay = document.getElementById('audioUnlockOverlay');
+			if (overlay) {
+				overlay.classList.add('hidden');
+				setTimeout(() => {
+					if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+				}, 800);
+			}
+
+		} catch (err) {
+			console.error("Failed to resume AudioContext:", err);
+		}
+	};
 
     // ==================== AUDIO STREAM ====================
     const audioIndicators = document.getElementById('audioIndicators');
@@ -423,46 +430,67 @@
     }
 
     // ==================== PUSH TO TALK ====================
-    window.toggleStream = async function(mode) {
-        if (mode === 'on') {
-            if (isTalking) return;
-            isTalking = true;
+		let ws;
+		let workletNode;
 
-            try {
-                micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
 
-                sourceNode = audioCtx.createMediaStreamSource(micStream);
-                processor = audioCtx.createScriptProcessor(4096, 1, 1);
+window.toggleStream = async function(mode) {
+	if (mode === 'on') {
+		if (ws && ws.readyState === WebSocket.OPEN) return;
 
-                sourceNode.connect(processor);
-                processor.connect(audioCtx.destination);
+		isTalking = true;
 
-                processor.onaudioprocess = (e) => {
-                    if (!isTalking || isDeafened) return;
-                    const input = e.inputBuffer.getChannelData(0);
-                    const pcm16 = new Int16Array(input.length);
-                    for (let i = 0; i < input.length; i++) {
-                        let s = Math.max(-1, Math.min(1, input[i]));
-                        pcm16[i] = s < 0 ? s * 32768 : s * 32767;
-                    }
-                    fetch('/talk?users=' + encodeURIComponent(JSON.stringify(getSelectedUsers())), {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/octet-stream' },
-						body: pcm16.buffer
-					});
-                };
-            } catch (err) {
-                console.error("Mic error:", err);
-            }
+		const users = encodeURIComponent(JSON.stringify(getSelectedUsers()));
+		ws = new WebSocket("ws://" + location.host + "/talk_ws?users=" + users);
 
-        } else {
-            isTalking = false;
-            if (processor) { processor.disconnect(); processor = null; }
-            if (sourceNode) { sourceNode.disconnect(); sourceNode = null; }
-            if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
-        }
-    };
+		ws.binaryType = "arraybuffer";
+
+		ws.onopen = async () => {
+			micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+			if (!audioCtx) {
+				audioCtx = new (window.AudioContext || window.webkitAudioContext)({
+					sampleRate: 48000
+				});
+			}
+
+			await audioCtx.audioWorklet.addModule('/static/recorder-worklet.js');
+
+			const source = audioCtx.createMediaStreamSource(micStream);
+			workletNode = new AudioWorkletNode(audioCtx, 'recorder');
+
+			workletNode.port.onmessage = (event) => {
+				if (ws.readyState === WebSocket.OPEN) {
+					ws.send(event.data);
+				}
+			};
+
+			source.connect(workletNode);
+		};
+
+		ws.onclose = () => {
+			isTalking = false;
+
+			if (workletNode) {
+				workletNode.disconnect();
+				workletNode = null;
+			}
+
+			if (micStream) {
+				micStream.getTracks().forEach(t => t.stop());
+				micStream = null;
+			}
+		};
+
+	} else {
+		isTalking = false;
+
+		if (ws) {
+			ws.close();
+			ws = null;
+		}
+	}
+};
 
 	// ==================== KEYBINDS ====================
 	const pttButton = document.querySelector('.p2t');
