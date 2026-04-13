@@ -184,29 +184,75 @@ class PyAudioMgr:
 		self.sample_rate = sample_rate
 
 		if self.debug:
-			print(f"[PyAudioMgr] Initialized | input={self.input} output={self.output}")
-			print(f"[PyAudioMgr] chunk_size={self.chunk_size} sample_rate={self.sample_rate}")
+			print(f"[PyAudioMgr] init | input={self.input} output={self.output}")
+			print(f"[PyAudioMgr] sample_rate={self.sample_rate} chunk_size={self.chunk_size}")
+
+		self.print_devices()
 
 	def log(self, msg):
 		if self.debug:
 			print(f"[PyAudioMgr] {msg}")
 
-	def open_stream(self):
+	# ---------------- DEVICE DEBUG ----------------
+	def print_devices(self):
+		self.log("Scanning audio devices...")
+
+		info = self.p.get_host_api_info_by_index(0)
+		device_count = info.get('deviceCount', 0)
+
+		self.log(f"Total devices: {device_count}")
+
+		for i in range(device_count):
+			dev = self.p.get_device_info_by_index(i)
+
+			name = dev.get("name")
+			max_in = dev.get("maxInputChannels")
+			max_out = dev.get("maxOutputChannels")
+			rate = dev.get("defaultSampleRate")
+
+			self.log(
+				f"[Device {i}] {name} | in={max_in} out={max_out} rate={rate}"
+			)
+
+		try:
+			default_in = self.p.get_default_input_device_info()
+			self.log(f"DEFAULT INPUT: {default_in['index']} | {default_in['name']}")
+		except Exception as e:
+			self.log(f"No default input device: {e}")
+
+		try:
+			default_out = self.p.get_default_output_device_info()
+			self.log(f"DEFAULT OUTPUT: {default_out['index']} | {default_out['name']}")
+		except Exception as e:
+			self.log(f"No default output device: {e}")
+
+	# ---------------- STREAM ----------------
+	def open_stream(self, device_index=None):
 		self.log("Opening stream...")
 
 		try:
-			self.stream = self.p.open(
-				format=pyaudio.paInt16,
-				channels=1,
-				rate=self.sample_rate,
-				input=self.input,
-				output=self.output,
-				frames_per_buffer=self.chunk_size
-			)
+			stream_args = {
+				"format": pyaudio.paInt16,
+				"channels": 1,
+				"rate": self.sample_rate,
+				"frames_per_buffer": self.chunk_size,
+				"input": self.input,
+				"output": self.output,
+			}
+
+			# If user specifies device, use it
+			if device_index is not None:
+				stream_args["input_device_index" if self.input else "output_device_index"] = device_index
+				self.log(f"Using device index: {device_index}")
+
+			self.stream = self.p.open(**stream_args)
 
 			self.log("Stream opened successfully")
 
-			self.log(f"Stream active: {self.stream.is_active()}")
+			if self.output:
+				self.log("Output stream active: " + str(self.stream.is_active()))
+			if self.input:
+				self.log("Input stream active: " + str(self.stream.is_active()))
 
 		except Exception as e:
 			self.log(f"FAILED to open stream: {e}")
@@ -217,49 +263,24 @@ class PyAudioMgr:
 			self.log("get_audio_chunk called but stream is None")
 			return b''
 
-		try:
-			data = self.stream.read(self.chunk_size, exception_on_overflow=False)
-			self.log(f"Captured audio chunk: {len(data)} bytes")
-			return data
-
-		except Exception as e:
-			self.log(f"Error reading audio: {e}")
-			return b''
+		data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+		self.log(f"read {len(data)} bytes")
+		return data
 
 	def write_audio_chunk(self, pcm):
 		if not self.stream:
 			self.log("write_audio_chunk called but stream is None")
 			return
 
-		try:
-			self.stream.write(pcm)
-			self.log(f"Wrote audio chunk: {len(pcm)} bytes")
-
-		except Exception as e:
-			self.log(f"Error writing audio: {e}")
-
-	def flush_audio(self):
-		if self.stream and self.input:
-			try:
-				avail = self.stream.get_read_available()
-				self.log(f"Flushing {avail} frames")
-
-				self.stream.read(avail, exception_on_overflow=False)
-
-			except Exception as e:
-				self.log(f"Flush error: {e}")
+		self.stream.write(pcm)
+		self.log(f"wrote {len(pcm)} bytes")
 
 	def close(self):
-		self.log("Closing stream...")
+		self.log("closing audio...")
 
-		try:
-			if self.stream:
-				self.stream.stop_stream()
-				self.stream.close()
-				self.stream = None
+		if self.stream:
+			self.stream.stop_stream()
+			self.stream.close()
 
-			self.p.terminate()
-			self.log("Closed successfully")
-
-		except Exception as e:
-			self.log(f"Error during close: {e}")
+		self.p.terminate()
+		self.log("terminated PyAudio")
