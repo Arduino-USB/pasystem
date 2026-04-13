@@ -168,119 +168,35 @@ class MumbleMgr:
 		self.safe_disconnect()
 		
 
-
 class PyAudioMgr:
-	def __init__(self, chunk_size=960, sample_rate=48000, input=False, output=False, debug=True):
+	def __init__(self, chunck_size=960, sample_rate=48000, input=False, output=False):
 		if input == output:
 			raise ValueError("Exactly one of input or output must be True")
-
-		self.debug = debug
 		self.p = pyaudio.PyAudio()
 		self.stream = None
-
 		self.input = input
 		self.output = output
-		self.chunk_size = chunk_size
+		self.chunk_size = chunck_size
 		self.sample_rate = sample_rate
-
-		if self.debug:
-			print(f"[PyAudioMgr] init | input={self.input} output={self.output}")
-			print(f"[PyAudioMgr] sample_rate={self.sample_rate} chunk_size={self.chunk_size}")
-
-		self.print_devices()
-
-	def log(self, msg):
-		if self.debug:
-			print(f"[PyAudioMgr] {msg}")
-
-	# ---------------- DEVICE DEBUG ----------------
-	def print_devices(self):
-		self.log("Scanning audio devices...")
-
-		info = self.p.get_host_api_info_by_index(0)
-		device_count = info.get('deviceCount', 0)
-
-		self.log(f"Total devices: {device_count}")
-
-		for i in range(device_count):
-			dev = self.p.get_device_info_by_index(i)
-
-			name = dev.get("name")
-			max_in = dev.get("maxInputChannels")
-			max_out = dev.get("maxOutputChannels")
-			rate = dev.get("defaultSampleRate")
-
-			self.log(
-				f"[Device {i}] {name} | in={max_in} out={max_out} rate={rate}"
-			)
-
-		try:
-			default_in = self.p.get_default_input_device_info()
-			self.log(f"DEFAULT INPUT: {default_in['index']} | {default_in['name']}")
-		except Exception as e:
-			self.log(f"No default input device: {e}")
-
-		try:
-			default_out = self.p.get_default_output_device_info()
-			self.log(f"DEFAULT OUTPUT: {default_out['index']} | {default_out['name']}")
-		except Exception as e:
-			self.log(f"No default output device: {e}")
-
-	# ---------------- STREAM ----------------
-	def open_stream(self, device_index=None):
-		self.log("Opening stream...")
-
-		try:
-			stream_args = {
-				"format": pyaudio.paInt16,
-				"channels": 1,
-				"rate": self.sample_rate,
-				"frames_per_buffer": self.chunk_size,
-				"input": self.input,
-				"output": self.output,
-			}
-
-			# If user specifies device, use it
-			if device_index is not None:
-				stream_args["input_device_index" if self.input else "output_device_index"] = device_index
-				self.log(f"Using device index: {device_index}")
-
-			self.stream = self.p.open(**stream_args)
-
-			self.log("Stream opened successfully")
-
-			if self.output:
-				self.log("Output stream active: " + str(self.stream.is_active()))
-			if self.input:
-				self.log("Input stream active: " + str(self.stream.is_active()))
-
-		except Exception as e:
-			self.log(f"FAILED to open stream: {e}")
-			raise
+	
+	def open_stream(self):
+		self.stream = self.p.open(
+			format=pyaudio.paInt16,
+			channels=1,
+			rate=self.sample_rate,
+			input=self.input,
+			output=self.output,
+			frames_per_buffer=self.chunk_size
+		)
 
 	def get_audio_chunk(self):
-		if not self.stream:
-			self.log("get_audio_chunk called but stream is None")
-			return b''
-
-		data = self.stream.read(self.chunk_size, exception_on_overflow=False)
-		self.log(f"read {len(data)} bytes")
-		return data
-
-	def write_audio_chunk(self, pcm):
-		if not self.stream:
-			self.log("write_audio_chunk called but stream is None")
-			return
-
-		self.stream.write(pcm)
-		self.log(f"wrote {len(pcm)} bytes")
-
-	def close(self):
-		self.log("closing audio...")
-
 		if self.stream:
-			self.stream.stop_stream()
-			self.stream.close()
+			return self.stream.read(self.chunk_size, exception_on_overflow=False)
+		return b''
 
-		self.p.terminate()
-		self.log("terminated PyAudio")
+	def flush_audio(self):
+		if self.stream and self.input:
+			try:
+				self.stream.read(self.stream.get_read_available(), exception_on_overflow=False)
+			except:
+				pass
