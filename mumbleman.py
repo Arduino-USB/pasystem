@@ -1,7 +1,6 @@
 from pymumble_py3 import Mumble, constants
 import threading
 import subprocess as sp
-import numpy as np
 import pyaudio
 import time
 
