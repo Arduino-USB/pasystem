@@ -61,7 +61,7 @@ class MumbleMgr:
 	def play_raw_audio(self, data):
 		"""For microphone streaming"""
 
-		if self.mumble and self.mumble.is_alive():
+		if self.mumble:
 			self.mumble.sound_output.add_sound(data)
 
 	def start_ffmpeg_process(self):
