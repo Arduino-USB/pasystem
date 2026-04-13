@@ -58,7 +58,7 @@ class MumbleMgr:
 		if callable(self.play_audio_callback):
 			#print("[_play_sound] playing audio")
 			self.play_audio_callback(user, soundchunk)
-		else:
+		#else:
 			#print("[_play_sound] callback not found")
 
 	def play_raw_audio(self, data):
