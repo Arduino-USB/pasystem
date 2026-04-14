@@ -169,29 +169,65 @@ class MumbleMgr:
 		
 
 class PyAudioMgr:
-	def __init__(self, chunck_size=960, sample_rate=48000, input=False, output=False):
+	def __init__(self, chunck_size=960, sample_rate=48000, input=False, output=False, mic_search=None, speaker_search=None):
 		if input == output:
 			raise ValueError("Exactly one of input or output must be True")
+
 		self.p = pyaudio.PyAudio()
 		self.stream = None
 		self.input = input
 		self.output = output
 		self.chunk_size = chunck_size
 		self.sample_rate = sample_rate
-	
+
+		self.mic_search = mic_search
+		self.speaker_search = speaker_search
+
+	def _find_device(self, search, is_input):
+		if not search:
+			return None
+
+		search = search.lower()
+
+		for i in range(self.p.get_device_count()):
+			info = self.p.get_device_info_by_index(i)
+			name = info["name"].lower()
+
+			if search in name:
+				if is_input and info["maxInputChannels"] > 0:
+					return i
+				if not is_input and info["maxOutputChannels"] > 0:
+					return i
+
+		print(f"[WARN] No matching device found for '{search}', using default")
+		return None
+
 	def open_stream(self):
+		device_index = None
+
+		if self.input:
+			device_index = self._find_device(self.mic_search, is_input=True)
+		elif self.output:
+			device_index = self._find_device(self.speaker_search, is_input=False)
+
 		self.stream = self.p.open(
 			format=pyaudio.paInt16,
 			channels=1,
 			rate=self.sample_rate,
 			input=self.input,
 			output=self.output,
+			input_device_index=device_index if self.input else None,
+			output_device_index=device_index if self.output else None,
 			frames_per_buffer=self.chunk_size
 		)
 
 	def get_audio_chunk(self):
 		if self.stream:
-			return self.stream.read(self.chunk_size, exception_on_overflow=False)
+			try:
+				return self.stream.read(self.chunk_size, exception_on_overflow=False)
+			except OSError as e:
+				print("Audio read error:", e)
+				return b''
 		return b''
 
 	def flush_audio(self):
@@ -200,7 +236,6 @@ class PyAudioMgr:
 				self.stream.read(self.stream.get_read_available(), exception_on_overflow=False)
 			except:
 				pass
-
 
 	def flush_output(self):
 		if self.stream and self.output:

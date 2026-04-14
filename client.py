@@ -31,10 +31,10 @@ m.start_ffmpeg_process()
 restart_mgr = RestartMgr(m)
 
 # --- Setup audio ---
-a_input = PyAudioMgr(input=True)
+a_input = PyAudioMgr(input=True, mic_search="CA-2890PRO")
 a_input.open_stream()
 
-a_output = PyAudioMgr(output=True)
+a_output = PyAudioMgr(output=True, speaker-search="CA-2890PRO")
 a_output.open_stream()
 
 # --- Audio playback callback ---
