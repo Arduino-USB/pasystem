@@ -200,3 +200,12 @@ class PyAudioMgr:
 				self.stream.read(self.stream.get_read_available(), exception_on_overflow=False)
 			except:
 				pass
+
+
+	def flush_output(self):
+		if self.stream and self.output:
+			try:
+				self.stream.stop_stream()
+				self.stream.start_stream()
+			except:
+				pass
