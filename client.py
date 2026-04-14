@@ -39,7 +39,7 @@ a_output.open_stream()
 
 # --- Audio playback callback ---
 def play_audio_callback(user, soundchunk):
-	print('[play_audio] Playing Audio')
+    print('[play_audio] Playing Audio')
     try:
         a_output.stream.write(soundchunk.pcm)
     except Exception:
