@@ -34,7 +34,7 @@ restart_mgr = RestartMgr(m)
 a_input = PyAudioMgr(input=True, mic_search="CA-2890PRO")
 a_input.open_stream()
 
-a_output = PyAudioMgr(output=True, speaker-search="CA-2890PRO")
+a_output = PyAudioMgr(output=True, speaker_search="CA-2890PRO")
 a_output.open_stream()
 
 # --- Audio playback callback ---
