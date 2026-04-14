@@ -49,7 +49,7 @@ m.play_audio_callback = play_audio_callback
 
 
 # Server-side Mic input
-a = PyAudioMgr(input=True, mic_search="CA-2890PRO", sample_rate=16000)
+a = PyAudioMgr(input=True, mic_search="CA-2890PRO")
 a.open_stream()
 
 def usernames_to_session(usernames):
