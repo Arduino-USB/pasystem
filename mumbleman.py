@@ -212,10 +212,22 @@ class PyAudioMgr:
 		elif self.output:
 			device_index = self._find_device(self.speaker_search, is_input=False)
 
+		if device_index is None:
+			device_index = (
+				self.p.get_default_input_device_info()["index"]
+				if self.input
+				else self.p.get_default_output_device_info()["index"]
+			)
+
+		info = self.p.get_device_info_by_index(device_index)
+
+		# USE DEFAULT SAMPLE RATE (this is the correct thing)
+		rate = int(info["defaultSampleRate"])
+
 		self.stream = self.p.open(
 			format=pyaudio.paInt16,
 			channels=1,
-			rate=self.sample_rate,
+			rate=rate,
 			input=self.input,
 			output=self.output,
 			input_device_index=device_index if self.input else None,
@@ -223,14 +235,15 @@ class PyAudioMgr:
 			frames_per_buffer=self.chunk_size
 		)
 
-	def get_audio_chunk(self):
-		if self.stream:
-			try:
-				return self.stream.read(self.chunk_size, exception_on_overflow=False)
-			except OSError as e:
-				print("Audio read error:", e)
-				return b''
-		return b''
+		print(f"[PyAudioMgr] device={info['name']} rate={rate}")
+		def get_audio_chunk(self):
+			if self.stream:
+				try:
+					return self.stream.read(self.chunk_size, exception_on_overflow=False)
+				except OSError as e:
+					print("Audio read error:", e)
+					return b''
+			return b''
 
 	def flush_audio(self):
 		if self.stream and self.input:
