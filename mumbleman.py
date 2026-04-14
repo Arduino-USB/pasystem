@@ -195,8 +195,10 @@ class PyAudioMgr:
 
 			if search in name:
 				if is_input and info["maxInputChannels"] > 0:
+					print(f"[PyAudioMgr Found device ID : {i}, Nanme : {name}]")
 					return i
 				if not is_input and info["maxOutputChannels"] > 0:
+					print(f"[PyAudioMgr Found device ID : {i}, Nanme : {name}]")
 					return i
 
 		print(f"[WARN] No matching device found for '{search}', using default")
