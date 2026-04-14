@@ -168,16 +168,19 @@ class MumbleMgr:
 		self.safe_disconnect()
 		
 
+
 class PyAudioMgr:
-	def __init__(self, chunck_size=960, sample_rate=48000, input=False, output=False, mic_search=None, speaker_search=None):
+	def __init__(self, chunk_size=960, sample_rate=48000, input=False, output=False, mic_search=None, speaker_search=None):
 		if input == output:
 			raise ValueError("Exactly one of input or output must be True")
 
 		self.p = pyaudio.PyAudio()
 		self.stream = None
+
 		self.input = input
 		self.output = output
-		self.chunk_size = chunck_size
+
+		self.chunk_size = chunk_size
 		self.sample_rate = sample_rate
 
 		self.mic_search = mic_search
@@ -195,21 +198,67 @@ class PyAudioMgr:
 
 			if search in name:
 				if is_input and info["maxInputChannels"] > 0:
-					print(f"[PyAudioMgr Found device ID : {i}, Nanme : {name}]")
+					print(f"[PyAudioMgr Found device ID: {i}, Name: {name}]")
 					return i
 				if not is_input and info["maxOutputChannels"] > 0:
-					print(f"[PyAudioMgr Found device ID : {i}, Nanme : {name}]")
+					print(f"[PyAudioMgr Found device ID: {i}, Name: {name}]")
 					return i
 
 		print(f"[WARN] No matching device found for '{search}', using default")
 		return None
+
+	def print_devices(self):
+		for i in range(self.p.get_device_count()):
+			info = self.p.get_device_info_by_index(i)
+			print("\n----------------------")
+			print("ID:", i)
+			print("Name:", info["name"])
+			print("In:", info["maxInputChannels"], "Out:", info["maxOutputChannels"])
+			print("Default rate:", info.get("defaultSampleRate"))
+
+	def _test_rate(self, device_index, rate, is_input):
+		try:
+			if is_input:
+				self.p.is_format_supported(
+					rate,
+					input_device=device_index,
+					input_channels=1,
+					input_format=pyaudio.paInt16
+				)
+			else:
+				self.p.is_format_supported(
+					rate,
+					output_device=device_index,
+					output_channels=1,
+					output_format=pyaudio.paInt16
+				)
+			return True
+		except:
+			return False
+
+	def _get_best_rate(self, device_index, is_input):
+		common_rates = [48000, 44100, 16000, 8000]
+
+		for r in common_rates:
+			if self._test_rate(device_index, r, is_input):
+				return r
+
+		raise RuntimeError("No valid sample rate found for device")
+
+	def _get_channels(self, info, is_input):
+		if is_input:
+			ch = info.get("maxInputChannels", 1)
+		else:
+			ch = info.get("maxOutputChannels", 1)
+
+		return max(1, min(ch, 2))
 
 	def open_stream(self):
 		device_index = None
 
 		if self.input:
 			device_index = self._find_device(self.mic_search, is_input=True)
-		elif self.output:
+		else:
 			device_index = self._find_device(self.speaker_search, is_input=False)
 
 		if device_index is None:
@@ -221,12 +270,14 @@ class PyAudioMgr:
 
 		info = self.p.get_device_info_by_index(device_index)
 
-		# USE DEFAULT SAMPLE RATE (this is the correct thing)
-		rate = int(info["defaultSampleRate"])
+		# ✅ DO NOT trust defaultSampleRate
+		rate = self._get_best_rate(device_index, self.input)
+
+		channels = self._get_channels(info, self.input)
 
 		self.stream = self.p.open(
 			format=pyaudio.paInt16,
-			channels=1,
+			channels=channels,
 			rate=rate,
 			input=self.input,
 			output=self.output,
@@ -235,15 +286,17 @@ class PyAudioMgr:
 			frames_per_buffer=self.chunk_size
 		)
 
-		print(f"[PyAudioMgr] device={info['name']} rate={rate}")
-		def get_audio_chunk(self):
-			if self.stream:
-				try:
-					return self.stream.read(self.chunk_size, exception_on_overflow=False)
-				except OSError as e:
-					print("Audio read error:", e)
-					return b''
-			return b''
+		print(f"[PyAudioMgr] device={info['name']}")
+		print(f"[PyAudioMgr] rate={rate}, channels={channels}")
+
+	def get_audio_chunk(self):
+		if self.stream:
+			try:
+				return self.stream.read(self.chunk_size, exception_on_overflow=False)
+			except OSError as e:
+				print("Audio read error:", e)
+				return b''
+		return b''
 
 	def flush_audio(self):
 		if self.stream and self.input:
