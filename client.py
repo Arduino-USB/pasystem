@@ -56,7 +56,7 @@ def push_to_talk():
                 m.play_raw_audio(data)
         else:
             a_input.flush_audio()
-			a_output.flush_output()  
+            a_output.flush_output()  
             time.sleep(0.01)
 
 # --- Alarm toggle ---
