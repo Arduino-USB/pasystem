@@ -2,6 +2,7 @@ from pymumble_py3 import Mumble, constants
 import threading
 import subprocess as sp
 import pyaudio
+import audioop
 import time
 
 class MumbleMgr:
@@ -166,11 +167,12 @@ class MumbleMgr:
 			self.whisper = whisper
 
 		self.safe_disconnect()
-		
+	
 
 
 class PyAudioMgr:
-	def __init__(self, chunk_size=960, sample_rate=48000, input=False, output=False, mic_search=None, speaker_search=None):
+	def __init__(self, chunk_size=960, sample_rate=48000, target_rate=None,
+	             input=False, output=False, mic_search=None, speaker_search=None):
 		if input == output:
 			raise ValueError("Exactly one of input or output must be True")
 
@@ -182,9 +184,13 @@ class PyAudioMgr:
 
 		self.chunk_size = chunk_size
 		self.sample_rate = sample_rate
+		self.target_rate = target_rate
 
 		self.mic_search = mic_search
 		self.speaker_search = speaker_search
+
+		self._resample_state = None
+		self._device_rate = None
 
 	def _find_device(self, search, is_input):
 		if not search:
@@ -270,8 +276,9 @@ class PyAudioMgr:
 
 		info = self.p.get_device_info_by_index(device_index)
 
-		# ✅ DO NOT trust defaultSampleRate
+		# DO NOT trust defaultSampleRate
 		rate = self._get_best_rate(device_index, self.input)
+		self._device_rate = rate
 
 		channels = self._get_channels(info, self.input)
 
@@ -289,14 +296,50 @@ class PyAudioMgr:
 		print(f"[PyAudioMgr] device={info['name']}")
 		print(f"[PyAudioMgr] rate={rate}, channels={channels}")
 
+		if self.target_rate:
+			print(f"[PyAudioMgr] target_rate={self.target_rate}")
+
+	# ---------- NEW ----------
+	def _resample(self, data, src_rate, dst_rate):
+		if src_rate == dst_rate:
+			return data
+
+		converted, self._resample_state = audioop.ratecv(
+			data,
+			2,  # 16-bit
+			1,  # mono
+			src_rate,
+			dst_rate,
+			self._resample_state
+		)
+		return converted
+	# -------------------------
+
 	def get_audio_chunk(self):
 		if self.stream:
 			try:
-				return self.stream.read(self.chunk_size, exception_on_overflow=False)
+				data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+
+				if self.target_rate:
+					data = self._resample(data, self._device_rate, self.target_rate)
+
+				return data
 			except OSError as e:
 				print("Audio read error:", e)
 				return b''
 		return b''
+
+	# ---------- NEW ----------
+	def write_audio(self, data):
+		if self.stream:
+			try:
+				if self.target_rate:
+					data = self._resample(data, self.target_rate, self._device_rate)
+
+				self.stream.write(data)
+			except Exception as e:
+				print("Audio write error:", e)
+	# -------------------------
 
 	def flush_audio(self):
 		if self.stream and self.input:
