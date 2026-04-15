@@ -166,12 +166,16 @@ class MumbleMgr:
 			self.whisper = whisper
 
 		self.safe_disconnect()
-	
+
+import pyaudio
+import subprocess as sp
 
 
 class PyAudioMgr:
-	def __init__(self, chunk_size=960, input=False, output=False,
-	             mic_search=None, speaker_search=None, target_rate=48000):
+	def __init__(self, chunk_size=960, sample_rate=48000,
+	             input=False, output=False,
+	             mic_search=None, speaker_search=None,
+	             target_rate=48000):
 
 		if input == output:
 			raise ValueError("Exactly one of input or output must be True")
@@ -183,15 +187,16 @@ class PyAudioMgr:
 		self.output = output
 
 		self.chunk_size = chunk_size
+		self.sample_rate = sample_rate
 		self.target_rate = target_rate
 
 		self.mic_search = mic_search
 		self.speaker_search = speaker_search
 
-		self.running = False
-		self.ffmpeg_proc = None
+		self.device_index = None
+		self.device_rate = None
 
-	# ---------- DEVICE SEARCH ----------
+	# ---------- DEVICE FIND ----------
 	def _find_device(self, search, is_input):
 		if not search:
 			return None
@@ -210,14 +215,45 @@ class PyAudioMgr:
 
 		return None
 
+	# ---------- RATE CHECK ----------
+	def _test_rate(self, device_index, rate, is_input):
+		try:
+			if is_input:
+				self.p.is_format_supported(
+					rate,
+					input_device=device_index,
+					input_channels=1,
+					input_format=pyaudio.paInt16
+				)
+			else:
+				self.p.is_format_supported(
+					rate,
+					output_device=device_index,
+					output_channels=1,
+					output_format=pyaudio.paInt16
+				)
+			return True
+		except:
+			return False
+
+	# ---------- BEST RATE PICKER ----------
+	def _get_best_rate(self, device_index, is_input):
+		common_rates = [48000, 44100, 16000, 8000]
+
+		for r in common_rates:
+			if self._test_rate(device_index, r, is_input):
+				return r
+
+		raise RuntimeError("No valid audio sample rate found for device")
+
 	# ---------- OPEN STREAM ----------
 	def open_stream(self):
 		device_index = None
 
 		if self.input:
-			device_index = self._find_device(self.mic_search, True)
+			device_index = self._find_device(self.mic_search, is_input=True)
 		else:
-			device_index = self._find_device(self.speaker_search, False)
+			device_index = self._find_device(self.speaker_search, is_input=False)
 
 		if device_index is None:
 			device_index = (
@@ -228,135 +264,131 @@ class PyAudioMgr:
 
 		info = self.p.get_device_info_by_index(device_index)
 
-		self.stream = self.p.open(
-			format=pyaudio.paInt16,
-			channels=1,
-			rate=self.target_rate,  # IMPORTANT: keep consistent
-			input=self.input,
-			output=self.output,
-			input_device_index=device_index if self.input else None,
-			output_device_index=device_index if self.output else None,
-			frames_per_buffer=self.chunk_size
-		)
+		# 🔥 SAFE RATE SELECTION
+		rate = self._get_best_rate(device_index, self.input)
+
+		channels = 1
+
+		try:
+			self.stream = self.p.open(
+				format=pyaudio.paInt16,
+				channels=channels,
+				rate=rate,
+				input=self.input,
+				output=self.output,
+				input_device_index=device_index if self.input else None,
+				output_device_index=device_index if self.output else None,
+				frames_per_buffer=self.chunk_size
+			)
+
+		except OSError:
+			print("[WARN] Primary rate failed, trying fallback rates...")
+
+			for fallback_rate in [48000, 44100, 16000, 8000]:
+				try:
+					self.stream = self.p.open(
+						format=pyaudio.paInt16,
+						channels=1,
+						rate=fallback_rate,
+						input=self.input,
+						output=self.output,
+						input_device_index=device_index if self.input else None,
+						output_device_index=device_index if self.output else None,
+						frames_per_buffer=self.chunk_size
+					)
+
+					rate = fallback_rate
+					break
+
+				except OSError:
+					continue
+			else:
+				raise RuntimeError("No valid audio sample rate found for this device")
+
+		self.device_rate = rate
+		self.device_index = device_index
 
 		print(f"[PyAudioMgr] device={info['name']}")
-		print(f"[PyAudioMgr] ffmpeg rate={self.target_rate}")
+		print(f"[PyAudioMgr] rate={self.device_rate}, channels=1")
 
-	# ---------- FFmpeg INPUT PIPE ----------
-	def start_input_stream(self, callback):
-		"""
-		Mic -> ffmpeg -> callback(chunk)
-		"""
+	# ---------- FFmpeg RESAMPLE (INPUT SIDE) ----------
+	def resample_to_target(self, data):
+		if self.device_rate == self.target_rate:
+			return data
 
-		self.running = True
+		cmd = [
+			"ffmpeg",
+			"-f", "s16le",
+			"-ar", str(self.device_rate),
+			"-ac", "1",
+			"-i", "pipe:0",
+			"-f", "s16le",
+			"-ar", str(self.target_rate),
+			"-ac", "1",
+			"pipe:1"
+		]
 
-		def worker():
-			command = [
-				"ffmpeg",
-				"-f", "s16le",
-				"-ar", str(self.target_rate),
-				"-ac", "1",
-				"-i", "pipe:0",
-				"-f", "s16le",
-				"-acodec", "pcm_s16le",
-				"-ac", "1",
-				"-ar", str(self.target_rate),
-				"pipe:1"
-			]
+		p = sp.Popen(cmd, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.DEVNULL)
+		out, _ = p.communicate(data)
+		return out
 
-			self.ffmpeg_proc = sp.Popen(
-				command,
-				stdin=sp.PIPE,
-				stdout=sp.PIPE,
-				stderr=sp.DEVNULL
-			)
+	# ---------- FFmpeg RESAMPLE (OUTPUT SIDE) ----------
+	def resample_to_device(self, data):
+		if self.device_rate == self.target_rate:
+			return data
 
-			while self.running:
-				try:
-					data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+		cmd = [
+			"ffmpeg",
+			"-f", "s16le",
+			"-ar", str(self.target_rate),
+			"-ac", "1",
+			"-i", "pipe:0",
+			"-f", "s16le",
+			"-ar", str(self.device_rate),
+			"-ac", "1",
+			"pipe:1"
+		]
 
-					self.ffmpeg_proc.stdin.write(data)
-					self.ffmpeg_proc.stdin.flush()
+		p = sp.Popen(cmd, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.DEVNULL)
+		out, _ = p.communicate(data)
+		return out
 
-					out = self.ffmpeg_proc.stdout.read(self.chunk_size)
-
-					if out and callback:
-						callback(out)
-
-				except Exception as e:
-					print("FFmpeg input error:", e)
-					break
-
-			self.stop()
-
-		threading.Thread(target=worker, daemon=True).start()
-
-	# ---------- FFmpeg OUTPUT PLAYBACK ----------
-	def start_output_stream(self, source_func):
-		"""
-		source_func() -> returns raw PCM chunks
-		"""
-
-		self.running = True
-
-		def worker():
-			command = [
-				"ffmpeg",
-				"-f", "s16le",
-				"-ar", str(self.target_rate),
-				"-ac", "1",
-				"-i", "pipe:0",
-				"-f", "s16le",
-				"-acodec", "pcm_s16le",
-				"-ar", str(self.target_rate),
-				"-ac", "1",
-				"pipe:1"
-			]
-
-			self.ffmpeg_proc = sp.Popen(
-				command,
-				stdin=sp.PIPE,
-				stdout=sp.PIPE,
-				stderr=sp.DEVNULL
-			)
-
-			while self.running:
-				try:
-					data = source_func()
-					if not data:
-						time.sleep(0.005)
-						continue
-
-					self.ffmpeg_proc.stdin.write(data)
-					self.ffmpeg_proc.stdin.flush()
-
-					out = self.ffmpeg_proc.stdout.read(self.chunk_size)
-
-					if self.stream:
-						self.stream.write(out)
-
-				except Exception as e:
-					print("FFmpeg output error:", e)
-					break
-
-			self.stop()
-
-		threading.Thread(target=worker, daemon=True).start()
-
-	# ---------- STOP ----------
-	def stop(self):
-		self.running = False
+	# ---------- READ ----------
+	def get_audio_chunk(self):
+		if not self.stream:
+			return b''
 
 		try:
-			if self.ffmpeg_proc:
-				self.ffmpeg_proc.kill()
-				self.ffmpeg_proc.wait()
-		except:
-			pass
+			data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+
+			if self.input:
+				data = self.resample_to_target(data)
+
+			return data
+
+		except OSError as e:
+			print("Audio read error:", e)
+			return b''
+
+	# ---------- WRITE ----------
+	def write_audio(self, data):
+		if not self.stream:
+			return
 
 		try:
-			if self.stream:
-				self.stream.stop_stream()
-				self.stream.close()
-		except:
-			pass
+			if self.output:
+				data = self.resample_to_device(data)
+
+			self.stream.write(data)
+
+		except Exception as e:
+			print("Audio write error:", e)
+
+	# ---------- FLUSH ----------
+	def flush_audio(self):
+		if self.stream and self.input:
+			try:
+				self.stream.read(self.stream.get_read_available(),
+				                 exception_on_overflow=False)
+			except:
+				pass
