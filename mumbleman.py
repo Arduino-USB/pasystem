@@ -392,3 +392,12 @@ class PyAudioMgr:
 				                 exception_on_overflow=False)
 			except:
 				pass
+
+	def flush_output(self):
+		if self.stream and self.output:
+			try:
+				# safest low-latency reset for PyAudio output stream
+				self.stream.stop_stream()
+				self.stream.start_stream()
+			except Exception as e:
+				print("Flush output error:", e)
