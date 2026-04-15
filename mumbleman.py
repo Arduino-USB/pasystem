@@ -2,7 +2,6 @@ from pymumble_py3 import Mumble, constants
 import threading
 import subprocess as sp
 import pyaudio
-import audioop
 import time
 
 class MumbleMgr:
@@ -171,8 +170,9 @@ class MumbleMgr:
 
 
 class PyAudioMgr:
-	def __init__(self, chunk_size=960, sample_rate=48000, target_rate=None,
-	             input=False, output=False, mic_search=None, speaker_search=None):
+	def __init__(self, chunk_size=960, input=False, output=False,
+	             mic_search=None, speaker_search=None, target_rate=48000):
+
 		if input == output:
 			raise ValueError("Exactly one of input or output must be True")
 
@@ -183,15 +183,15 @@ class PyAudioMgr:
 		self.output = output
 
 		self.chunk_size = chunk_size
-		self.sample_rate = sample_rate
 		self.target_rate = target_rate
 
 		self.mic_search = mic_search
 		self.speaker_search = speaker_search
 
-		self._resample_state = None
-		self._device_rate = None
+		self.running = False
+		self.ffmpeg_proc = None
 
+	# ---------- DEVICE SEARCH ----------
 	def _find_device(self, search, is_input):
 		if not search:
 			return None
@@ -204,68 +204,20 @@ class PyAudioMgr:
 
 			if search in name:
 				if is_input and info["maxInputChannels"] > 0:
-					print(f"[PyAudioMgr Found device ID: {i}, Name: {name}]")
 					return i
 				if not is_input and info["maxOutputChannels"] > 0:
-					print(f"[PyAudioMgr Found device ID: {i}, Name: {name}]")
 					return i
 
-		print(f"[WARN] No matching device found for '{search}', using default")
 		return None
 
-	def print_devices(self):
-		for i in range(self.p.get_device_count()):
-			info = self.p.get_device_info_by_index(i)
-			print("\n----------------------")
-			print("ID:", i)
-			print("Name:", info["name"])
-			print("In:", info["maxInputChannels"], "Out:", info["maxOutputChannels"])
-			print("Default rate:", info.get("defaultSampleRate"))
-
-	def _test_rate(self, device_index, rate, is_input):
-		try:
-			if is_input:
-				self.p.is_format_supported(
-					rate,
-					input_device=device_index,
-					input_channels=1,
-					input_format=pyaudio.paInt16
-				)
-			else:
-				self.p.is_format_supported(
-					rate,
-					output_device=device_index,
-					output_channels=1,
-					output_format=pyaudio.paInt16
-				)
-			return True
-		except:
-			return False
-
-	def _get_best_rate(self, device_index, is_input):
-		common_rates = [48000, 44100, 16000, 8000]
-
-		for r in common_rates:
-			if self._test_rate(device_index, r, is_input):
-				return r
-
-		raise RuntimeError("No valid sample rate found for device")
-
-	def _get_channels(self, info, is_input):
-		if is_input:
-			ch = info.get("maxInputChannels", 1)
-		else:
-			ch = info.get("maxOutputChannels", 1)
-
-		return max(1, min(ch, 2))
-
+	# ---------- OPEN STREAM ----------
 	def open_stream(self):
 		device_index = None
 
 		if self.input:
-			device_index = self._find_device(self.mic_search, is_input=True)
+			device_index = self._find_device(self.mic_search, True)
 		else:
-			device_index = self._find_device(self.speaker_search, is_input=False)
+			device_index = self._find_device(self.speaker_search, False)
 
 		if device_index is None:
 			device_index = (
@@ -276,16 +228,10 @@ class PyAudioMgr:
 
 		info = self.p.get_device_info_by_index(device_index)
 
-		# DO NOT trust defaultSampleRate
-		rate = self._get_best_rate(device_index, self.input)
-		self._device_rate = rate
-
-		channels = self._get_channels(info, self.input)
-
 		self.stream = self.p.open(
 			format=pyaudio.paInt16,
-			channels=channels,
-			rate=rate,
+			channels=1,
+			rate=self.target_rate,  # IMPORTANT: keep consistent
 			input=self.input,
 			output=self.output,
 			input_device_index=device_index if self.input else None,
@@ -294,64 +240,123 @@ class PyAudioMgr:
 		)
 
 		print(f"[PyAudioMgr] device={info['name']}")
-		print(f"[PyAudioMgr] rate={rate}, channels={channels}")
+		print(f"[PyAudioMgr] ffmpeg rate={self.target_rate}")
 
-		if self.target_rate:
-			print(f"[PyAudioMgr] target_rate={self.target_rate}")
+	# ---------- FFmpeg INPUT PIPE ----------
+	def start_input_stream(self, callback):
+		"""
+		Mic -> ffmpeg -> callback(chunk)
+		"""
 
-	# ---------- NEW ----------
-	def _resample(self, data, src_rate, dst_rate):
-		if src_rate == dst_rate:
-			return data
+		self.running = True
 
-		converted, self._resample_state = audioop.ratecv(
-			data,
-			2,  # 16-bit
-			1,  # mono
-			src_rate,
-			dst_rate,
-			self._resample_state
-		)
-		return converted
-	# -------------------------
+		def worker():
+			command = [
+				"ffmpeg",
+				"-f", "s16le",
+				"-ar", str(self.target_rate),
+				"-ac", "1",
+				"-i", "pipe:0",
+				"-f", "s16le",
+				"-acodec", "pcm_s16le",
+				"-ac", "1",
+				"-ar", str(self.target_rate),
+				"pipe:1"
+			]
 
-	def get_audio_chunk(self):
-		if self.stream:
-			try:
-				data = self.stream.read(self.chunk_size, exception_on_overflow=False)
+			self.ffmpeg_proc = sp.Popen(
+				command,
+				stdin=sp.PIPE,
+				stdout=sp.PIPE,
+				stderr=sp.DEVNULL
+			)
 
-				if self.target_rate:
-					data = self._resample(data, self._device_rate, self.target_rate)
+			while self.running:
+				try:
+					data = self.stream.read(self.chunk_size, exception_on_overflow=False)
 
-				return data
-			except OSError as e:
-				print("Audio read error:", e)
-				return b''
-		return b''
+					self.ffmpeg_proc.stdin.write(data)
+					self.ffmpeg_proc.stdin.flush()
 
-	# ---------- NEW ----------
-	def write_audio(self, data):
-		if self.stream:
-			try:
-				if self.target_rate:
-					data = self._resample(data, self.target_rate, self._device_rate)
+					out = self.ffmpeg_proc.stdout.read(self.chunk_size)
 
-				self.stream.write(data)
-			except Exception as e:
-				print("Audio write error:", e)
-	# -------------------------
+					if out and callback:
+						callback(out)
 
-	def flush_audio(self):
-		if self.stream and self.input:
-			try:
-				self.stream.read(self.stream.get_read_available(), exception_on_overflow=False)
-			except:
-				pass
+				except Exception as e:
+					print("FFmpeg input error:", e)
+					break
 
-	def flush_output(self):
-		if self.stream and self.output:
-			try:
+			self.stop()
+
+		threading.Thread(target=worker, daemon=True).start()
+
+	# ---------- FFmpeg OUTPUT PLAYBACK ----------
+	def start_output_stream(self, source_func):
+		"""
+		source_func() -> returns raw PCM chunks
+		"""
+
+		self.running = True
+
+		def worker():
+			command = [
+				"ffmpeg",
+				"-f", "s16le",
+				"-ar", str(self.target_rate),
+				"-ac", "1",
+				"-i", "pipe:0",
+				"-f", "s16le",
+				"-acodec", "pcm_s16le",
+				"-ar", str(self.target_rate),
+				"-ac", "1",
+				"pipe:1"
+			]
+
+			self.ffmpeg_proc = sp.Popen(
+				command,
+				stdin=sp.PIPE,
+				stdout=sp.PIPE,
+				stderr=sp.DEVNULL
+			)
+
+			while self.running:
+				try:
+					data = source_func()
+					if not data:
+						time.sleep(0.005)
+						continue
+
+					self.ffmpeg_proc.stdin.write(data)
+					self.ffmpeg_proc.stdin.flush()
+
+					out = self.ffmpeg_proc.stdout.read(self.chunk_size)
+
+					if self.stream:
+						self.stream.write(out)
+
+				except Exception as e:
+					print("FFmpeg output error:", e)
+					break
+
+			self.stop()
+
+		threading.Thread(target=worker, daemon=True).start()
+
+	# ---------- STOP ----------
+	def stop(self):
+		self.running = False
+
+		try:
+			if self.ffmpeg_proc:
+				self.ffmpeg_proc.kill()
+				self.ffmpeg_proc.wait()
+		except:
+			pass
+
+		try:
+			if self.stream:
 				self.stream.stop_stream()
-				self.stream.start_stream()
-			except:
-				pass
+				self.stream.close()
+		except:
+			pass
