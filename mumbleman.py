@@ -171,7 +171,6 @@ class MumbleMgr:
 
 
 
-
 class PyAudioMgr:
 	def __init__(self, chunk_size=960, target_rate=48000,
 	             input=False, output=False,
@@ -274,37 +273,41 @@ class PyAudioMgr:
 			output=self.output,
 			input_device_index=device_index if self.input else None,
 			output_device_index=device_index if self.output else None,
-			frames_per_buffer=self.chunk_size
+			frames_per_buffer=max(self.chunk_size, 2048)
 		)
 
 		self.device_rate = rate
 		self.device_index = device_index
 		self.channels = channels
 
-	# ---------- RESAMPLER ----------
+	# ---------- FFmpeg RESAMPLER ----------
 	def _resample(self, data, src_rate, dst_rate):
 		if src_rate == dst_rate:
 			return data
 
-		audio = np.frombuffer(data, dtype=np.int16)
+		# ffmpeg expects raw PCM input
+		cmd = [
+			"ffmpeg",
+			"-f", "s16le",
+			"-ar", str(src_rate),
+			"-ac", str(self.channels),
+			"-i", "pipe:0",
+			"-f", "s16le",
+			"-ar", str(dst_rate),
+			"-ac", str(self.channels),
+			"pipe:1",
+			"-loglevel", "quiet"
+		]
 
-		if self.channels == 2:
-			audio = audio.reshape(-1, 2)
+		process = subprocess.Popen(
+			cmd,
+			stdin=subprocess.PIPE,
+			stdout=subprocess.PIPE,
+			stderr=subprocess.DEVNULL
+		)
 
-		duration = len(audio) / src_rate
-		new_length = int(duration * dst_rate)
-
-		x_old = np.arange(len(audio))
-		x_new = np.linspace(0, len(audio), new_length, endpoint=False)
-
-		if self.channels == 2:
-			left = np.interp(x_new, x_old, audio[:, 0])
-			right = np.interp(x_new, x_old, audio[:, 1])
-			resampled = np.stack((left, right), axis=-1)
-		else:
-			resampled = np.interp(x_new, x_old, audio)
-
-		return resampled.astype(np.int16).tobytes()
+		out, _ = process.communicate(data)
+		return out
 
 	# ---------- READ ----------
 	def get_audio_chunk(self):
@@ -358,11 +361,7 @@ class PyAudioMgr:
 			self.stream.start_stream()
 
 		except Exception:
-			# silently ignore — stream is probably dead
 			return
-
-		except Exception as e:
-			print("Audio flush error:", e)
 
 	# ---------- CLEANUP ----------
 	def close(self):
