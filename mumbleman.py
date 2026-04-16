@@ -221,15 +221,23 @@ class PyAudioMgr:
 
 		for rate in candidates:
 			try:
-				self.p.is_format_supported(
-					rate,
-					input_device=device_index if is_input else None,
-					output_device=device_index if not is_input else None,
-					input_channels=channels if is_input else None,
-					output_channels=channels if not is_input else None,
-					format=pyaudio.paInt16
-				)
+				if is_input:
+					self.p.is_format_supported(
+						rate,
+						input_device=device_index,
+						input_channels=channels,
+						input_format=pyaudio.paInt16
+					)
+				else:
+					self.p.is_format_supported(
+						rate,
+						output_device=device_index,
+						output_channels=channels,
+						output_format=pyaudio.paInt16
+					)
+
 				return rate
+
 			except ValueError:
 				continue
 
