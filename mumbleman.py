@@ -215,7 +215,27 @@ class PyAudioMgr:
 
 		return None
 
-	# ---------- OPEN STREAM (LINUX SAFE) ----------
+	# ---------- SAMPLE RATE PROBE ----------
+	def _get_supported_rate(self, device_index, channels, is_input):
+		candidates = [48000, 44100, 32000, 24000, 16000, 8000]
+
+		for rate in candidates:
+			try:
+				self.p.is_format_supported(
+					rate,
+					input_device=device_index if is_input else None,
+					output_device=device_index if not is_input else None,
+					input_channels=channels if is_input else None,
+					output_channels=channels if not is_input else None,
+					format=pyaudio.paInt16
+				)
+				return rate
+			except ValueError:
+				continue
+
+		raise RuntimeError("No supported sample rate found")
+
+	# ---------- OPEN STREAM ----------
 	def open_stream(self):
 		if self.input:
 			device_index = self._find_device(self.mic_search, True)
@@ -228,19 +248,20 @@ class PyAudioMgr:
 
 		info = self.p.get_device_info_by_index(device_index)
 
-		# Use device default sample rate
-		rate = int(info["defaultSampleRate"])
-
-		# Use supported channels
+		# Safer channel selection
 		if self.input:
 			channels = int(info["maxInputChannels"])
 		else:
 			channels = int(info["maxOutputChannels"])
 
-		channels = max(1, min(2, channels))  # clamp 1–2
+		# Clamp aggressively (many devices lie)
+		channels = 1 if channels < 2 else 2
+
+		# Probe working sample rate
+		rate = self._get_supported_rate(device_index, channels, self.input)
 
 		print(f"[PyAudioMgr] device={info['name']}")
-		print(f"[PyAudioMgr] native rate={rate}, channels={channels}")
+		print(f"[PyAudioMgr] selected rate={rate}, channels={channels}")
 
 		self.stream = self.p.open(
 			format=pyaudio.paInt16,
@@ -257,7 +278,7 @@ class PyAudioMgr:
 		self.device_index = device_index
 		self.channels = channels
 
-	# ---------- FAST RESAMPLER ----------
+	# ---------- RESAMPLER ----------
 	def _resample(self, data, src_rate, dst_rate):
 		if src_rate == dst_rate:
 			return data
@@ -270,13 +291,17 @@ class PyAudioMgr:
 		duration = len(audio) / src_rate
 		new_length = int(duration * dst_rate)
 
-		resampled = np.interp(
-			np.linspace(0, len(audio), new_length, endpoint=False),
-			np.arange(len(audio)),
-			audio
-		).astype(np.int16)
+		x_old = np.arange(len(audio))
+		x_new = np.linspace(0, len(audio), new_length, endpoint=False)
 
-		return resampled.tobytes()
+		if self.channels == 2:
+			left = np.interp(x_new, x_old, audio[:, 0])
+			right = np.interp(x_new, x_old, audio[:, 1])
+			resampled = np.stack((left, right), axis=-1)
+		else:
+			resampled = np.interp(x_new, x_old, audio)
+
+		return resampled.astype(np.int16).tobytes()
 
 	# ---------- READ ----------
 	def get_audio_chunk(self):
@@ -308,3 +333,13 @@ class PyAudioMgr:
 
 		except Exception as e:
 			print("Audio write error:", e)
+
+	# ---------- CLEANUP ----------
+	def close(self):
+		if self.stream:
+			self.stream.stop_stream()
+			self.stream.close()
+			self.stream = None
+
+		if self.p:
+			self.p.terminate()
