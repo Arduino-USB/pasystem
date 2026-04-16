@@ -48,17 +48,29 @@ def play_audio_callback(user, soundchunk):
 m.play_audio_callback = play_audio_callback
 
 # --- Push-To-Talk ---
+last_pressed = False
+
 def push_to_talk():
-    while True:
-        if GPIO.input(PUSH_TO_TALK_PIN) == GPIO.LOW:
-            print("[main] Push-To-Talk Button pressed")
-            while GPIO.input(PUSH_TO_TALK_PIN) == GPIO.LOW:
-                data = a_input.get_audio_chunk()
-                m.play_raw_audio(data)
-        else:
-            a_input.flush()
-            a_output.flush()  
-            time.sleep(0.01)
+	global last_pressed
+
+	while True:
+		pressed = GPIO.input(PUSH_TO_TALK_PIN) == GPIO.LOW
+
+		if pressed:
+			if not last_pressed:
+				print("[main] Push-To-Talk Button pressed")
+
+			data = a_input.get_audio_chunk()
+			m.play_raw_audio(data)
+
+		else:
+			if last_pressed:
+				# ONLY flush once on release
+				a_input.flush()
+				a_output.flush()
+
+		last_pressed = pressed
+		time.sleep(0.01)
 
 # --- Alarm toggle ---
 alarm_button_toggle = False

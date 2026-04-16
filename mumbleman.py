@@ -343,9 +343,11 @@ class PyAudioMgr:
 			return
 
 		try:
+			if not self.stream.is_active():
+				return
+
 			self.stream.stop_stream()
 
-			# INPUT: drain buffered mic data
 			if self.input:
 				while True:
 					try:
@@ -353,9 +355,11 @@ class PyAudioMgr:
 					except Exception:
 						break
 
-			# OUTPUT: stopping is enough to drop buffer
-
 			self.stream.start_stream()
+
+		except Exception:
+			# silently ignore — stream is probably dead
+			return
 
 		except Exception as e:
 			print("Audio flush error:", e)
