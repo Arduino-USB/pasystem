@@ -1,6 +1,8 @@
 from pymumble_py3 import Mumble, constants
 import threading
 import subprocess as sp
+import numpy as np
+
 import pyaudio
 import time
 
@@ -167,15 +169,13 @@ class MumbleMgr:
 
 		self.safe_disconnect()
 
-import pyaudio
-import subprocess as sp
+
 
 
 class PyAudioMgr:
-	def __init__(self, chunk_size=960, sample_rate=48000,
+	def __init__(self, chunk_size=960, target_rate=48000,
 	             input=False, output=False,
-	             mic_search=None, speaker_search=None,
-	             target_rate=48000):
+	             mic_search=None, speaker_search=None):
 
 		if input == output:
 			raise ValueError("Exactly one of input or output must be True")
@@ -187,7 +187,6 @@ class PyAudioMgr:
 		self.output = output
 
 		self.chunk_size = chunk_size
-		self.sample_rate = sample_rate
 		self.target_rate = target_rate
 
 		self.mic_search = mic_search
@@ -195,6 +194,7 @@ class PyAudioMgr:
 
 		self.device_index = None
 		self.device_rate = None
+		self.channels = None
 
 	# ---------- DEVICE FIND ----------
 	def _find_device(self, search, is_input):
@@ -215,144 +215,68 @@ class PyAudioMgr:
 
 		return None
 
-	# ---------- RATE CHECK ----------
-	def _test_rate(self, device_index, rate, is_input):
-		try:
-			if is_input:
-				self.p.is_format_supported(
-					rate,
-					input_device=device_index,
-					input_channels=1,
-					input_format=pyaudio.paInt16
-				)
-			else:
-				self.p.is_format_supported(
-					rate,
-					output_device=device_index,
-					output_channels=1,
-					output_format=pyaudio.paInt16
-				)
-			return True
-		except:
-			return False
-
-	# ---------- BEST RATE PICKER ----------
-	def _get_best_rate(self, device_index, is_input):
-		common_rates = [48000, 44100, 16000, 8000]
-
-		for r in common_rates:
-			if self._test_rate(device_index, r, is_input):
-				return r
-
-		raise RuntimeError("No valid audio sample rate found for device")
-
-	# ---------- OPEN STREAM ----------
+	# ---------- OPEN STREAM (LINUX SAFE) ----------
 	def open_stream(self):
-		device_index = None
-
 		if self.input:
-			device_index = self._find_device(self.mic_search, is_input=True)
+			device_index = self._find_device(self.mic_search, True)
+			if device_index is None:
+				device_index = self.p.get_default_input_device_info()["index"]
 		else:
-			device_index = self._find_device(self.speaker_search, is_input=False)
-
-		if device_index is None:
-			device_index = (
-				self.p.get_default_input_device_info()["index"]
-				if self.input
-				else self.p.get_default_output_device_info()["index"]
-			)
+			device_index = self._find_device(self.speaker_search, False)
+			if device_index is None:
+				device_index = self.p.get_default_output_device_info()["index"]
 
 		info = self.p.get_device_info_by_index(device_index)
 
-		# 🔥 SAFE RATE SELECTION
-		rate = self._get_best_rate(device_index, self.input)
+		# Use device default sample rate
+		rate = int(info["defaultSampleRate"])
 
-		channels = 1
+		# Use supported channels
+		if self.input:
+			channels = int(info["maxInputChannels"])
+		else:
+			channels = int(info["maxOutputChannels"])
 
-		try:
-			self.stream = self.p.open(
-				format=pyaudio.paInt16,
-				channels=channels,
-				rate=rate,
-				input=self.input,
-				output=self.output,
-				input_device_index=device_index if self.input else None,
-				output_device_index=device_index if self.output else None,
-				frames_per_buffer=self.chunk_size
-			)
+		channels = max(1, min(2, channels))  # clamp 1–2
 
-		except OSError:
-			print("[WARN] Primary rate failed, trying fallback rates...")
+		print(f"[PyAudioMgr] device={info['name']}")
+		print(f"[PyAudioMgr] native rate={rate}, channels={channels}")
 
-			for fallback_rate in [48000, 44100, 16000, 8000]:
-				try:
-					self.stream = self.p.open(
-						format=pyaudio.paInt16,
-						channels=1,
-						rate=fallback_rate,
-						input=self.input,
-						output=self.output,
-						input_device_index=device_index if self.input else None,
-						output_device_index=device_index if self.output else None,
-						frames_per_buffer=self.chunk_size
-					)
-
-					rate = fallback_rate
-					break
-
-				except OSError:
-					continue
-			else:
-				raise RuntimeError("No valid audio sample rate found for this device")
+		self.stream = self.p.open(
+			format=pyaudio.paInt16,
+			channels=channels,
+			rate=rate,
+			input=self.input,
+			output=self.output,
+			input_device_index=device_index if self.input else None,
+			output_device_index=device_index if self.output else None,
+			frames_per_buffer=self.chunk_size
+		)
 
 		self.device_rate = rate
 		self.device_index = device_index
+		self.channels = channels
 
-		print(f"[PyAudioMgr] device={info['name']}")
-		print(f"[PyAudioMgr] rate={self.device_rate}, channels=1")
-
-	# ---------- FFmpeg RESAMPLE (INPUT SIDE) ----------
-	def resample_to_target(self, data):
-		if self.device_rate == self.target_rate:
+	# ---------- FAST RESAMPLER ----------
+	def _resample(self, data, src_rate, dst_rate):
+		if src_rate == dst_rate:
 			return data
 
-		cmd = [
-			"ffmpeg",
-			"-f", "s16le",
-			"-ar", str(self.device_rate),
-			"-ac", "1",
-			"-i", "pipe:0",
-			"-f", "s16le",
-			"-ar", str(self.target_rate),
-			"-ac", "1",
-			"pipe:1"
-		]
+		audio = np.frombuffer(data, dtype=np.int16)
 
-		p = sp.Popen(cmd, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.DEVNULL)
-		out, _ = p.communicate(data)
-		return out
+		if self.channels == 2:
+			audio = audio.reshape(-1, 2)
 
-	# ---------- FFmpeg RESAMPLE (OUTPUT SIDE) ----------
-	def resample_to_device(self, data):
-		if self.device_rate == self.target_rate:
-			return data
+		duration = len(audio) / src_rate
+		new_length = int(duration * dst_rate)
 
-		cmd = [
-			"ffmpeg",
-			"-f", "s16le",
-			"-ar", str(self.target_rate),
-			"-ac", "1",
-			"-i", "pipe:0",
-			"-f", "s16le",
-			"-ar", str(self.device_rate),
-			"-ac", "1",
-			"pipe:1"
-		]
+		resampled = np.interp(
+			np.linspace(0, len(audio), new_length, endpoint=False),
+			np.arange(len(audio)),
+			audio
+		).astype(np.int16)
 
-
-		p = sp.Popen(cmd, stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.DEVNULL)
-		out, _ = p.communicate(data)
-		return out
+		return resampled.tobytes()
 
 	# ---------- READ ----------
 	def get_audio_chunk(self):
@@ -363,7 +287,7 @@ class PyAudioMgr:
 			data = self.stream.read(self.chunk_size, exception_on_overflow=False)
 
 			if self.input:
-				data = self.resample_to_target(data)
+				data = self._resample(data, self.device_rate, self.target_rate)
 
 			return data
 
@@ -378,27 +302,9 @@ class PyAudioMgr:
 
 		try:
 			if self.output:
-				data = self.resample_to_device(data)
+				data = self._resample(data, self.target_rate, self.device_rate)
 
 			self.stream.write(data)
 
 		except Exception as e:
 			print("Audio write error:", e)
-
-	# ---------- FLUSH ----------
-	def flush_audio(self):
-		if self.stream and self.input:
-			try:
-				self.stream.read(self.stream.get_read_available(),
-				                 exception_on_overflow=False)
-			except:
-				pass
-
-	def flush_output(self):
-		if self.stream and self.output:
-			try:
-				# safest low-latency reset for PyAudio output stream
-				self.stream.stop_stream()
-				self.stream.start_stream()
-			except Exception as e:
-				print("Flush output error:", e)
