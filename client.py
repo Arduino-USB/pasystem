@@ -56,8 +56,8 @@ def push_to_talk():
                 data = a_input.get_audio_chunk()
                 m.play_raw_audio(data)
         else:
-            a_input.flush_audio()
-            a_output.flush_output()  
+            a_input.flush()
+            a_output.flush()  
             time.sleep(0.01)
 
 # --- Alarm toggle ---

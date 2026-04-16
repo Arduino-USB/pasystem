@@ -235,10 +235,8 @@ class PyAudioMgr:
 						output_channels=channels,
 						output_format=pyaudio.paInt16
 					)
-
 				return rate
-
-			except ValueError:
+			except Exception:
 				continue
 
 		raise RuntimeError("No supported sample rate found")
@@ -256,16 +254,13 @@ class PyAudioMgr:
 
 		info = self.p.get_device_info_by_index(device_index)
 
-		# Safer channel selection
 		if self.input:
 			channels = int(info["maxInputChannels"])
 		else:
 			channels = int(info["maxOutputChannels"])
 
-		# Clamp aggressively (many devices lie)
 		channels = 1 if channels < 2 else 2
 
-		# Probe working sample rate
 		rate = self._get_supported_rate(device_index, channels, self.input)
 
 		print(f"[PyAudioMgr] device={info['name']}")
@@ -341,6 +336,29 @@ class PyAudioMgr:
 
 		except Exception as e:
 			print("Audio write error:", e)
+
+	# ---------- FLUSH ----------
+	def flush(self):
+		if not self.stream:
+			return
+
+		try:
+			self.stream.stop_stream()
+
+			# INPUT: drain buffered mic data
+			if self.input:
+				while True:
+					try:
+						self.stream.read(self.chunk_size, exception_on_overflow=False)
+					except Exception:
+						break
+
+			# OUTPUT: stopping is enough to drop buffer
+
+			self.stream.start_stream()
+
+		except Exception as e:
+			print("Audio flush error:", e)
 
 	# ---------- CLEANUP ----------
 	def close(self):
